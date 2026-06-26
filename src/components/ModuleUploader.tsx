@@ -225,30 +225,9 @@ export default function ModuleUploader() {
         approvalStatus: status,
       });
 
-      // Pre-generate narration audio from speaker notes (PPTX only).
-      // This warms module_slide_audio (honouring the chosen provider) so the
-      // convert-ppt-to-video pipeline reuses it instead of re-narrating.
-      if (newModuleId && slideNotes.length > 0) {
-        for (let i = 0; i < slideNotes.length; i++) {
-          const note = slideNotes[i];
-          setNarrationProgress(`Generating narration ${i + 1}/${slideNotes.length}…`);
-          try {
-            const { error: fnError } = await supabase.functions.invoke("generate-audio", {
-              body: {
-                moduleId: newModuleId,
-                slideIndex: note.slideNumber,
-                text: note.text,
-                narrationProvider,
-                voice: narrationProvider === "elevenlabs" ? elevenLabsVoiceId : voiceDescription,
-              },
-            });
-            if (fnError) console.error(`Narration slide ${note.slideNumber} failed:`, fnError);
-          } catch (e) {
-            console.error(`Narration slide ${note.slideNumber} failed:`, e);
-          }
-        }
-        setNarrationProgress("");
-      }
+      // Narration is handled entirely by the convert-ppt-to-video pipeline
+      // (speaker notes → edge-tts, or LLM-generated narration for note-less
+      // decks). No separate pre-generation step is needed here.
 
       // Auto-kick the narrated-video render (slides → narration → ffmpeg MP4).
       // Fire-and-forget: the module viewer shows live progress and plays the

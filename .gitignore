@@ -31,3 +31,4 @@ dist-ssr
 
 # Lovable local metadata
 .lovable/
+.vercel
