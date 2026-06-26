@@ -20,19 +20,24 @@ interface NarratedSlideshowProps {
   onModuleComplete?: () => void;
 }
 
+const SILENT_MS = 6000;
+
 /**
  * Plays an uploaded deck as a narrated slideshow: rendered slide images shown
  * full-bleed with the AI narration audio for each slide, AUTO-ADVANCING as each
- * clip ends. One Play press runs the whole deck. Uses assets the pipeline stores
- * (module_outputs.slide_images + module_slide_audio) — no MP4 stitch required.
+ * clip ends. One Play press runs the whole deck. Playback is driven imperatively
+ * off the <audio> "ended" event so the chain never stalls between slides.
  */
 export default function NarratedSlideshow({ moduleId, title, onModuleComplete }: NarratedSlideshowProps) {
   const audioRef = useRef<HTMLAudioElement>(null);
+  const idxRef = useRef(0);
+  const silentTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const autoStarted = useRef(false);
+
   const [idx, setIdx] = useState(0);
   const [playing, setPlaying] = useState(false);
-  const [autoTried, setAutoTried] = useState(false);
-  const [starting, setStarting] = useState(false);
   const [completed, setCompleted] = useState(false);
+  const [starting, setStarting] = useState(false);
 
   const { data: slides = [] } = useQuery({
     queryKey: ["slideshow-assets", moduleId],
@@ -77,56 +82,75 @@ export default function NarratedSlideshow({ moduleId, title, onModuleComplete }:
     refetchInterval: ready ? false : 5000,
   });
 
-  const cur = slides[idx];
-
-  // Move to the next slide; keep `playing` true so the chain continues.
-  const advance = () => {
-    setIdx((i) => {
-      if (i < slides.length - 1) return i + 1;
-      setPlaying(false);
-      setCompleted((done) => {
-        if (!done) onModuleComplete?.();
-        return true;
-      });
-      return i;
-    });
+  const clearSilent = () => {
+    if (silentTimer.current) { clearTimeout(silentTimer.current); silentTimer.current = null; }
   };
 
-  // Single source of truth for playback: whenever the slide or play-state
-  // changes, play the current slide's audio (or hold a silent slide ~6s).
-  // NOTE: we do NOT bind to the audio element's pause/ended events for state —
-  // browsers fire `pause` when a clip ends, which would otherwise stop the chain.
-  useEffect(() => {
+  // Show slide `i` and start its narration. Imperative so it can be called
+  // straight from the audio "ended" handler — a context where play() is allowed.
+  const playAt = (i: number) => {
     const el = audioRef.current;
-    if (!el) return;
-    if (!playing || !cur) { el.pause(); return; }
-    if (cur.audio) {
-      if (el.src !== cur.audio) el.src = cur.audio;
-      el.play().catch(() => setPlaying(false)); // blocked autoplay → wait for a click
-      return;
+    if (i < 0 || i >= slides.length) return;
+    clearSilent();
+    idxRef.current = i;
+    setIdx(i);
+    setCompleted(false);
+    setPlaying(true);
+    const s = slides[i];
+    if (s?.audio && el) {
+      el.src = s.audio;
+      el.currentTime = 0;
+      el.play().catch(() => setPlaying(false));
+    } else {
+      // Silent slide: hold a few seconds, then continue.
+      silentTimer.current = setTimeout(() => goNext(), SILENT_MS);
     }
-    const t = setTimeout(advance, 6000); // silent slide
-    return () => clearTimeout(t);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [idx, playing, cur?.audio]);
+  };
 
-  // Try to start automatically once assets are ready (browsers may block audio
-  // autoplay until the user interacts — then the Play button starts it, and it
-  // runs through to the end on its own).
-  useEffect(() => {
-    if (ready && !autoTried) {
-      setAutoTried(true);
-      setPlaying(true);
+  const goNext = () => {
+    const i = idxRef.current;
+    if (i < slides.length - 1) {
+      playAt(i + 1);
+    } else {
+      clearSilent();
+      setPlaying(false);
+      setCompleted(true);
+      onModuleComplete?.();
     }
-  }, [ready, autoTried]);
+  };
+
+  const pause = () => {
+    clearSilent();
+    audioRef.current?.pause();
+    setPlaying(false);
+  };
 
   const toggle = () => {
-    if (!cur) return;
-    if (completed) { setIdx(0); setCompleted(false); setPlaying(true); return; }
-    setPlaying((p) => !p);
+    if (!slides.length) return;
+    if (completed) { playAt(0); return; }
+    if (playing) { pause(); return; }
+    playAt(idx); // resume current slide from its start
   };
 
-  const go = (n: number) => setIdx(Math.max(0, Math.min(slides.length - 1, n)));
+  const go = (n: number) => {
+    const t = Math.max(0, Math.min(slides.length - 1, n));
+    if (playing) playAt(t);
+    else { idxRef.current = t; setIdx(t); }
+  };
+
+  // Try to start automatically once assets are ready. Browsers may block audio
+  // autoplay until the user interacts; if blocked, the big Play button starts it.
+  useEffect(() => {
+    if (ready && !autoStarted.current) {
+      autoStarted.current = true;
+      playAt(0);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [ready]);
+
+  useEffect(() => () => clearSilent(), []);
+
+  const cur = slides[idx];
 
   const startBuild = async () => {
     setStarting(true);
@@ -152,19 +176,19 @@ export default function NarratedSlideshow({ moduleId, title, onModuleComplete }:
               {cur?.image && (
                 <img src={cur.image} alt={`Slide ${idx + 1}`} className="max-h-full max-w-full object-contain" />
               )}
-              {!playing && !completed && (
+              {!playing && (
                 <button
                   onClick={toggle}
                   className="absolute inset-0 flex items-center justify-center bg-black/30 hover:bg-black/40 transition-colors"
                   aria-label="Play"
                 >
                   <span className="flex h-16 w-16 items-center justify-center rounded-full bg-white/90 shadow-lg">
-                    <Play className="h-7 w-7 text-black ml-1" />
+                    {completed ? <RotateCcw className="h-7 w-7 text-black" /> : <Play className="h-7 w-7 text-black ml-1" />}
                   </span>
                 </button>
               )}
             </div>
-            <audio ref={audioRef} onEnded={advance} preload="auto" className="hidden" />
+            <audio ref={audioRef} onEnded={goNext} preload="auto" className="hidden" />
             <div className="flex items-center gap-1 px-4 py-3 border-t">
               <Button size="icon" variant="ghost" className="h-9 w-9" onClick={toggle} aria-label={playing ? "Pause" : "Play"}>
                 {completed ? <RotateCcw className="h-5 w-5" /> : playing ? <Pause className="h-5 w-5" /> : <Play className="h-5 w-5" />}
