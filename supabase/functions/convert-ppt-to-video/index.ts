@@ -144,7 +144,7 @@ serve(async (req) => {
         //  - otherwise generate a spoken teaching script from the slide's text
         //    via the LLM (so we explain the slide, not read it verbatim);
         //  - if the LLM is unavailable, fall back to the raw slide text.
-        const LOVABLE_API_KEY = Deno.env.get("LOVABLE_API_KEY");
+        const GEMINI_API_KEY = Deno.env.get("GEMINI_API_KEY");
         const narrations: string[] = new Array(slideImageUrls.length).fill("");
         const needGen: number[] = [];
         for (let i = 0; i < slideImageUrls.length; i++) {
@@ -157,13 +157,13 @@ serve(async (req) => {
         }
         if (needGen.length > 0) {
           let generated: string[] = [];
-          if (LOVABLE_API_KEY) {
+          if (GEMINI_API_KEY) {
             await adminClient.from("video_generation_jobs").update({
               current_step: "Writing narration script...", progress: 25,
             }).eq("id", jobId);
             try {
               generated = await generateNarrations(
-                LOVABLE_API_KEY,
+                GEMINI_API_KEY,
                 mod.title || "Lesson",
                 needGen.map((i) => sanitizeNarration(slideTexts[i] || "")),
               );
@@ -373,21 +373,26 @@ async function generateNarrations(
     `Return ONLY a JSON array of exactly ${slideTexts.length} strings — one narration ` +
     `per slide, in order. No commentary, no code fences.`;
 
-  const res = await fetch("https://ai.gateway.lovable.dev/v1/chat/completions", {
-    method: "POST",
-    headers: { Authorization: `Bearer ${apiKey}`, "Content-Type": "application/json" },
-    body: JSON.stringify({
-      model: "google/gemini-3-flash-preview",
-      messages: [
-        { role: "system", content: system },
-        { role: "user", content: user },
-      ],
-    }),
-  });
-  if (!res.ok) throw new Error(`AI gateway ${res.status}: ${(await res.text()).slice(0, 200)}`);
+  const model = "gemini-2.5-flash";
+  const res = await fetch(
+    `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${apiKey}`,
+    {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        system_instruction: { parts: [{ text: system }] },
+        contents: [{ parts: [{ text: user }] }],
+        generationConfig: {
+          temperature: 0.6,
+          responseMimeType: "application/json",
+          responseSchema: { type: "ARRAY", items: { type: "STRING" } },
+        },
+      }),
+    },
+  );
+  if (!res.ok) throw new Error(`Gemini ${res.status}: ${(await res.text()).slice(0, 200)}`);
   const data = await res.json();
-  let content: string = data?.choices?.[0]?.message?.content || "";
-  content = content.trim().replace(/^```(?:json)?/i, "").replace(/```$/i, "").trim();
+  const content: string = data?.candidates?.[0]?.content?.parts?.[0]?.text || "";
   let arr: unknown;
   try {
     arr = JSON.parse(content);
