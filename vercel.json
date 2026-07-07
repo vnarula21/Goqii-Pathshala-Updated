@@ -1,11 +1,33 @@
 {
   "$schema": "https://openapi.vercel.sh/vercel.json",
-  "framework": "vite",
-  "buildCommand": "vite build",
-  "outputDirectory": "dist",
-  "rewrites": [{ "source": "/(.*)", "destination": "/index.html" }],
+  "services": {
+    "frontend": {
+      "root": ".",
+      "framework": "vite"
+    },
+    "edge-tts": {
+      "root": "services/edge-tts"
+    }
+  },
+  "rewrites": [
+    {
+      "source": "/api(/.*)?",
+      "destination": {
+        "type": "service",
+        "service": "edge-tts"
+      }
+    },
+    {
+      "source": "/(.*)",
+      "destination": {
+        "type": "service",
+        "service": "frontend"
+      }
+    }
+  ],
   "headers": [
     { "source": "/", "headers": [{ "key": "Cache-Control", "value": "no-store, must-revalidate" }] },
     { "source": "/index.html", "headers": [{ "key": "Cache-Control", "value": "no-store, must-revalidate" }] }
   ]
 }
+
