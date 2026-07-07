@@ -78,16 +78,8 @@ WITH CHECK (
   )
 );
 
--- Allow managers to view user_organizations for learners in their organization
-CREATE POLICY "Managers can view user_organizations in their organization"
-ON public.user_organizations FOR SELECT
-TO authenticated
-USING (
-  public.has_role(auth.uid(), 'manager') AND
-  EXISTS (
-    SELECT 1 
-    FROM public.user_organizations manager_org
-    WHERE manager_org.user_id = auth.uid() 
-    AND manager_org.organization_id = user_organizations.organization_id
-  )
-);
+-- NOTE: "Managers can view user_organizations in their organization" is created
+-- by migration 20260109091459_fix_user_organizations_recursion.sql, which runs
+-- before this one and uses a SECURITY DEFINER function to avoid infinite
+-- recursion. Not recreated here to avoid overwriting it with the naive
+-- (recursive) version that originally caused that bug.
