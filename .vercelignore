@@ -1,5 +1,5 @@
-services
-supabase
-tts-samples
-graphify-out
+/services-tts-standalone
+/supabase
+/tts-samples
+/graphify-out
 *.md
