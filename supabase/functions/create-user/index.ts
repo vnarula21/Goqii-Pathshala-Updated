@@ -127,10 +127,22 @@ serve(async (req) => {
     const newUserId = userData.user.id;
     console.log(`User created with ID: ${newUserId}`);
 
-    // Assign role - use upsert to handle case where trigger already created the role
-    const { error: assignRoleError } = await adminClient.from('user_roles').upsert(
-      { user_id: newUserId, role: role },
-      { onConflict: 'user_id,role', ignoreDuplicates: true }
+    // Remove any role the signup trigger may have auto-assigned (it defaults
+    // new users to 'learner' before we get a chance to set their real role),
+    // then assign the intended role. Without this delete, a different role
+    // value never "conflicts" with the existing row, so upsert alone left
+    // users with two roles (learner + their real role).
+    const { error: deleteRoleError } = await adminClient
+      .from('user_roles')
+      .delete()
+      .eq('user_id', newUserId);
+
+    if (deleteRoleError) {
+      console.error('Error clearing auto-assigned role:', deleteRoleError);
+    }
+
+    const { error: assignRoleError } = await adminClient.from('user_roles').insert(
+      { user_id: newUserId, role: role }
     );
 
     if (assignRoleError) {
