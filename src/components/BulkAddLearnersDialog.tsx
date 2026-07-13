@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useRef } from "react";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
 import {
@@ -10,7 +10,7 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
-import { Loader2, Download } from "lucide-react";
+import { Loader2, Download, Upload } from "lucide-react";
 
 interface ParsedLearner {
   fullName: string;
@@ -46,6 +46,39 @@ export function BulkAddLearnersDialog({ open, onOpenChange, onSubmit, isSubmitti
   const [preview, setPreview] = useState<ParsedLearner[]>([]);
   const [parseError, setParseError] = useState<string | null>(null);
   const [submitted, setSubmitted] = useState(false);
+  const fileInputRef = useRef<HTMLInputElement>(null);
+
+  const handleFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    const reader = new FileReader();
+    reader.onload = (event) => {
+      const text = event.target?.result as string;
+      const lines = text.split("\n").map((l) => l.trim()).filter((l) => l.length > 0);
+
+      // If the first line looks like a header row (e.g. "Full Name,Email" or
+      // "name,email"), skip it - it's not an actual learner to create.
+      const looksLikeHeader = lines[0] && /name/i.test(lines[0]) && /email/i.test(lines[0]);
+      const dataLines = looksLikeHeader ? lines.slice(1) : lines;
+
+      // Keep only the first two comma-separated columns (name, email), in
+      // case the CSV has extra columns we don't need.
+      const cleaned = dataLines
+        .map((line) => line.split(",").slice(0, 2).map((p) => p.trim()).join(", "))
+        .join("\n");
+
+      setRawInput(cleaned);
+      setParseError(null);
+    };
+    reader.onerror = () => {
+      setParseError("Could not read that file. Please make sure it's a valid CSV.");
+    };
+    reader.readAsText(file);
+
+    // Reset the input so selecting the same file again re-triggers onChange
+    e.target.value = "";
+  };
 
   const handleParse = () => {
     setParseError(null);
@@ -115,6 +148,23 @@ export function BulkAddLearnersDialog({ open, onOpenChange, onSubmit, isSubmitti
 
         {preview.length === 0 ? (
           <>
+            <input
+              type="file"
+              accept=".csv,text/csv"
+              ref={fileInputRef}
+              onChange={handleFileUpload}
+              className="hidden"
+            />
+            <Button
+              type="button"
+              variant="outline"
+              onClick={() => fileInputRef.current?.click()}
+              className="w-full"
+            >
+              <Upload className="h-4 w-4 mr-2" />
+              Upload CSV file
+            </Button>
+            <p className="text-xs text-muted-foreground text-center -mt-2">or paste directly below</p>
             <Textarea
               placeholder={"Jane Doe, jane@example.com\nJohn Smith, john@example.com"}
               value={rawInput}
