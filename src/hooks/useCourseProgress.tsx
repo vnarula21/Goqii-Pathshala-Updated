@@ -52,6 +52,7 @@ export function useCourseProgress(courseId: string) {
       isQuiz = false,
       isFirstAttempt = false,
       assignmentsSatisfied = true,
+      courseAssessmentsSatisfied = true,
     }: {
       moduleId: string;
       score: number;
@@ -61,6 +62,9 @@ export function useCourseProgress(courseId: string) {
       isFirstAttempt?: boolean;
       /** When false, we record the score but DO NOT mark the module completed yet. */
       assignmentsSatisfied?: boolean;
+      /** When false, the course cannot be marked completed even if every module is done -
+       * there's a course-level assessment (separate from module quizzes) still pending. */
+      courseAssessmentsSatisfied?: boolean;
     }) => {
       const { data: userData } = await supabase.auth.getUser();
       if (!userData.user) throw new Error("Not authenticated");
@@ -102,7 +106,7 @@ export function useCourseProgress(courseId: string) {
             completedModules.reduce((sum, m) => sum + m.score, 0) / completedModules.length
           )
         : null;
-      const isCompleted = allModulesCompleted && (overallScore || 0) >= passingScore;
+      const isCompleted = allModulesCompleted && (overallScore || 0) >= passingScore && courseAssessmentsSatisfied;
       const wasAlreadyCompleted = currentProgress.is_completed;
 
       const { error: updateError } = await supabase
@@ -159,6 +163,55 @@ export function useCourseProgress(courseId: string) {
     },
   });
 
+  const recheckCompletion = useMutation({
+    mutationFn: async ({
+      totalModules,
+      passingScore,
+      courseAssessmentsSatisfied,
+    }: {
+      totalModules: number;
+      passingScore: number;
+      courseAssessmentsSatisfied: boolean;
+    }) => {
+      if (!progress) return { isNewCourseCompletion: false };
+
+      const moduleScores = progress.module_scores || {};
+      const completedModules = Object.values(moduleScores).filter(m => m.completed);
+      const allModulesCompleted = completedModules.length >= totalModules;
+      const overallScore = allModulesCompleted
+        ? Math.round(completedModules.reduce((sum, m) => sum + m.score, 0) / completedModules.length)
+        : null;
+      const isCompleted = allModulesCompleted && (overallScore || 0) >= passingScore && courseAssessmentsSatisfied;
+      const wasAlreadyCompleted = progress.is_completed;
+
+      if (isCompleted === wasAlreadyCompleted) {
+        return { isNewCourseCompletion: false };
+      }
+
+      const { error } = await supabase
+        .from("course_progress")
+        .update({
+          is_completed: isCompleted,
+          completed_at: isCompleted ? new Date().toISOString() : null,
+        })
+        .eq("id", progress.id);
+
+      if (error) throw error;
+
+      return { isNewCourseCompletion: isCompleted && !wasAlreadyCompleted };
+    },
+    onSuccess: async (data) => {
+      queryClient.invalidateQueries({ queryKey: ["course-progress", courseId] });
+      if (data?.isNewCourseCompletion) {
+        try {
+          await addXPAsync({ amount: 25, reason: "Course completed!" });
+        } catch (e) {
+          console.error("Failed to award course XP:", e);
+        }
+      }
+    },
+  });
+
   const resetProgress = useMutation({
     mutationFn: async () => {
       if (!progress) return;
@@ -178,6 +231,7 @@ export function useCourseProgress(courseId: string) {
     progress,
     isLoading,
     updateProgress: updateProgress.mutate,
+    recheckCompletion: recheckCompletion.mutate,
     resetProgress: resetProgress.mutate,
     isUpdating: updateProgress.isPending,
   };

@@ -69,7 +69,7 @@ export default function CourseViewer() {
   const [activeAssessmentId, setActiveAssessmentId] = useState<string | null>(null);
   const [addModuleDialogOpen, setAddModuleDialogOpen] = useState(false);
   const [isContentComplete, setIsContentComplete] = useState(false);
-  const { progress, isLoading: progressLoading, resetProgress, updateProgress } = useCourseProgress(id || "");
+  const { progress, isLoading: progressLoading, resetProgress, updateProgress, recheckCompletion } = useCourseProgress(id || "");
   const { courseAssessments, isLoading: assessmentsLoading } = useCourseAssessments(id || "");
   const { submissions } = useMySubmissions();
   const { submissions: moduleAssignmentSubs } = useMyModuleAssignmentSubmissions({ courseId: id });
@@ -182,6 +182,14 @@ export default function CourseViewer() {
         return sub && (sub.status === "submitted" || sub.status === "graded");
       });
     };
+    const totalCourseAssessments = courseAssessments?.length || 0;
+    const satisfiedCourseAssessments = courseAssessments?.filter((ca: any) => {
+      const sub: any = submissions?.find((s) => s.assessment_id === ca.assessment_id && s.course_id === id);
+      return sub?.status === "graded";
+    }).length || 0;
+    const courseAssessmentsSatisfied = totalCourseAssessments === 0 || satisfiedCourseAssessments >= totalCourseAssessments;
+
+    let ranModuleUpdate = false;
     for (const cm of mods) {
       const mid = cm.module.id;
       const ms = scores[mid];
@@ -195,11 +203,24 @@ export default function CourseViewer() {
         isQuiz: false,
         isFirstAttempt: false,
         assignmentsSatisfied: true,
+        courseAssessmentsSatisfied,
       });
+      ranModuleUpdate = true;
       break;
     }
+
+    // If no module needed updating (all already marked completed), but the
+    // course's overall completion might still be stale because a course-level
+    // assessment was just submitted/graded - recheck directly.
+    if (!ranModuleUpdate) {
+      recheckCompletion({
+        totalModules: mods.length,
+        passingScore: courseData.passing_score,
+        courseAssessmentsSatisfied,
+      });
+    }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [progress?.module_scores, moduleAssignmentSubs, moduleAssignments, course, id]);
+  }, [progress?.module_scores, progress?.is_completed, moduleAssignmentSubs, moduleAssignments, course, id, courseAssessments, submissions]);
 
   if (authLoading || isLoading || progressLoading || assessmentsLoading) {
     return (
@@ -333,6 +354,7 @@ export default function CourseViewer() {
   // Handle module completion (only marks completed if assignments are done)
   const handleModuleComplete = (moduleId: string, score: number, isFirstAttempt: boolean, hasQuiz: boolean) => {
     const assignmentsSatisfied = isAssignmentDoneForModule(moduleId);
+    const courseAssessmentsSatisfied = totalAssessments === 0 || completedAssessments >= totalAssessments;
     updateProgress({
       moduleId,
       score,
@@ -341,6 +363,7 @@ export default function CourseViewer() {
       isQuiz: hasQuiz,
       isFirstAttempt,
       assignmentsSatisfied,
+      courseAssessmentsSatisfied,
     });
 
     if (assignmentsSatisfied) {
