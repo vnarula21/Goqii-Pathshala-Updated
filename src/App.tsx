@@ -32,6 +32,8 @@ import LearnerProgressPage from "./pages/LearnerProgressPage";
 import ModuleReviewPage from "./pages/ModuleReviewPage";
 import CourseGroupManagement from "./pages/CourseGroupManagement";
 import TTSTestPage from "./pages/TTSTestPage";
+import ChangePassword from "./pages/ChangePassword";
+import ResetPassword from "./pages/ResetPassword";
 
 const queryClient = new QueryClient();
 
@@ -44,6 +46,8 @@ const App = () => (
         <Routes>
           <Route path="/" element={<Home />} />
           <Route path="/auth" element={<Auth />} />
+          <Route path="/change-password" element={<ChangePassword />} />
+          <Route path="/reset-password" element={<ResetPassword />} />
           <Route path="/library" element={<Library />} />
           <Route path="/library/:moduleId" element={<ModuleViewer />} />
           <Route path="/create" element={<ModuleCreationHub />} />

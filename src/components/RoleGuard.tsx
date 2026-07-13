@@ -1,7 +1,8 @@
 import { ReactNode } from "react";
-import { Navigate } from "react-router-dom";
+import { Navigate, useLocation } from "react-router-dom";
 import { useAuth } from "@/hooks/useAuth";
 import { useUserRole, AppRole } from "@/hooks/useUserRole";
+import { useMustChangePassword } from "@/hooks/useMustChangePassword";
 import { Loader2 } from "lucide-react";
 
 interface RoleGuardProps {
@@ -13,9 +14,11 @@ interface RoleGuardProps {
 export function RoleGuard({ children, allowedRoles, fallbackPath = "/" }: RoleGuardProps) {
   const { user, loading: authLoading } = useAuth();
   const { role, loading: roleLoading } = useUserRole();
+  const { mustChangePassword, loading: passwordCheckLoading } = useMustChangePassword();
+  const location = useLocation();
 
-  // Show loader while either auth or role is loading
-  if (authLoading || roleLoading) {
+  // Show loader while auth, role, or password-check is loading
+  if (authLoading || roleLoading || passwordCheckLoading) {
     return (
       <div className="min-h-screen flex items-center justify-center">
         <Loader2 className="h-8 w-8 animate-spin text-primary" />
@@ -26,6 +29,11 @@ export function RoleGuard({ children, allowedRoles, fallbackPath = "/" }: RoleGu
   // Not authenticated - redirect to auth
   if (!user) {
     return <Navigate to="/auth" replace />;
+  }
+
+  // Force password change before allowing access to anything else
+  if (mustChangePassword && location.pathname !== "/change-password") {
+    return <Navigate to="/change-password" replace />;
   }
 
   // User is authenticated but doesn't have the required role

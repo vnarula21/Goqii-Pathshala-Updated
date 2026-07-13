@@ -18,14 +18,27 @@ import { Switch } from "@/components/ui/switch";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuSeparator, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
-import { UserPlus, Loader2, Search, Globe, Lock, Building2, MoreHorizontal, Pencil, UserX, UserCheck } from "lucide-react";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
+import { UserPlus, Loader2, Search, Globe, Lock, Building2, MoreHorizontal, Pencil, UserX, UserCheck, Trash2, Upload } from "lucide-react";
 import { getRoleDisplayName } from "@/lib/roleDisplayNames";
+import { BulkAddLearnersDialog } from "@/components/BulkAddLearnersDialog";
 
 export default function UserManagement() {
   const { isAdmin } = useUserRole();
   const { learners, isLoading, toggleActive } = useLearners();
   const { levels } = useLevels();
-  const { createUser, updateUserProfile, toggleUserActive, updateUserOrganizations } = useUsers();
+  const { createUser, deleteUser, bulkCreateUsers, updateUserProfile, toggleUserActive, updateUserOrganizations } = useUsers();
+  const [learnerToDelete, setLearnerToDelete] = useState<{ id: string; name: string } | null>(null);
+  const [bulkAddOpen, setBulkAddOpen] = useState(false);
   const { users: managers, isLoading: managersLoading } = useUsersByRole("manager");
   const { users: smes, isLoading: smesLoading } = useUsersByRole("sme");
   const { users: smeExperts, isLoading: smeExpertsLoading } = useUsersByRole("sme_expert");
@@ -841,14 +854,20 @@ export default function UserManagement() {
                   <CardTitle>Learners</CardTitle>
                   <CardDescription>{filteredLearners.length} learners found</CardDescription>
                 </div>
-                <div className="relative w-64">
-                  <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-muted-foreground" />
-                  <Input
-                    placeholder="Search learners..."
-                    value={searchQuery}
-                    onChange={(e) => setSearchQuery(e.target.value)}
-                    className="pl-10"
-                  />
+                <div className="flex items-center gap-2">
+                  <div className="relative w-64">
+                    <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+                    <Input
+                      placeholder="Search learners..."
+                      value={searchQuery}
+                      onChange={(e) => setSearchQuery(e.target.value)}
+                      className="pl-10"
+                    />
+                  </div>
+                  <Button variant="outline" onClick={() => setBulkAddOpen(true)}>
+                    <Upload className="h-4 w-4 mr-2" />
+                    Bulk Add
+                  </Button>
                 </div>
               </div>
             </CardHeader>
@@ -883,6 +902,14 @@ export default function UserManagement() {
                           <span className="text-sm text-muted-foreground">
                             {learner.is_active ? "Deactivate" : "Activate"}
                           </span>
+                          <Button
+                            variant="ghost"
+                            size="icon"
+                            className="text-destructive hover:text-destructive"
+                            onClick={() => setLearnerToDelete({ id: learner.id, name: learner.full_name || learner.email })}
+                          >
+                            <Trash2 className="h-4 w-4" />
+                          </Button>
                         </div>
                       </TableCell>
                     </TableRow>
@@ -899,6 +926,38 @@ export default function UserManagement() {
             </CardContent>
           </Card>
         )}
+
+        <AlertDialog open={!!learnerToDelete} onOpenChange={() => setLearnerToDelete(null)}>
+          <AlertDialogContent>
+            <AlertDialogHeader>
+              <AlertDialogTitle>Delete learner?</AlertDialogTitle>
+              <AlertDialogDescription>
+                This will permanently delete {learnerToDelete?.name}'s account, including their progress, submissions, and certificates. This cannot be undone.
+              </AlertDialogDescription>
+            </AlertDialogHeader>
+            <AlertDialogFooter>
+              <AlertDialogCancel>Cancel</AlertDialogCancel>
+              <AlertDialogAction
+                className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+                onClick={() => {
+                  if (learnerToDelete) {
+                    deleteUser.mutate({ userId: learnerToDelete.id });
+                    setLearnerToDelete(null);
+                  }
+                }}
+              >
+                Delete
+              </AlertDialogAction>
+            </AlertDialogFooter>
+          </AlertDialogContent>
+        </AlertDialog>
+
+        <BulkAddLearnersDialog
+          open={bulkAddOpen}
+          onOpenChange={setBulkAddOpen}
+          onSubmit={(users) => bulkCreateUsers.mutate({ users })}
+          isSubmitting={bulkCreateUsers.isPending}
+        />
         </div>
       </div>
     </AppSidebar>

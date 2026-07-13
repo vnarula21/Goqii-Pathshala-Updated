@@ -67,6 +67,64 @@ export function useUsers() {
     },
   });
 
+  const deleteUser = useMutation({
+    mutationFn: async ({ userId }: { userId: string }) => {
+      const { data, error } = await supabase.functions.invoke("delete-user", {
+        body: { targetUserId: userId },
+      });
+
+      if (error) {
+        throw new Error(error.message || "Failed to delete user");
+      }
+      if (data?.error) {
+        throw new Error(data.error);
+      }
+      return data;
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["users-by-role"] });
+      queryClient.invalidateQueries({ queryKey: ["learners"] });
+      queryClient.invalidateQueries({ queryKey: ["managers"] });
+      toast.success("User deleted successfully");
+    },
+    onError: (error) => {
+      toast.error("Failed to delete user: " + error.message);
+    },
+  });
+
+  const bulkCreateUsers = useMutation({
+    mutationFn: async ({
+      users,
+      organizationId,
+    }: {
+      users: { email: string; fullName: string; password: string }[];
+      organizationId?: string;
+    }) => {
+      const { data, error } = await supabase.functions.invoke("bulk-create-users", {
+        body: { users, organizationId },
+      });
+
+      if (error) {
+        throw new Error(error.message || "Failed to bulk create users");
+      }
+      if (data?.error) {
+        throw new Error(data.error);
+      }
+      return data as { successCount: number; failureCount: number; results: { email: string; success: boolean; error?: string }[] };
+    },
+    onSuccess: (data) => {
+      queryClient.invalidateQueries({ queryKey: ["learners"] });
+      if (data.failureCount === 0) {
+        toast.success(`Created ${data.successCount} learners successfully`);
+      } else {
+        toast.warning(`Created ${data.successCount} learners, ${data.failureCount} failed`);
+      }
+    },
+    onError: (error) => {
+      toast.error("Bulk creation failed: " + error.message);
+    },
+  });
+
   const updateUserProfile = useMutation({
     mutationFn: async ({
       userId,
@@ -170,6 +228,8 @@ export function useUsers() {
 
   return {
     createUser,
+    deleteUser,
+    bulkCreateUsers,
     updateUserProfile,
     toggleUserActive,
     updateUserOrganizations,

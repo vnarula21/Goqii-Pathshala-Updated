@@ -157,6 +157,17 @@ serve(async (req) => {
 
     console.log(`Role ${role} assigned to user ${newUserId}`);
 
+    // Force a password change on first login, since the admin/manager chose
+    // this password on the user's behalf rather than the user setting it themselves.
+    const { error: forcePasswordError } = await adminClient
+      .from('profiles')
+      .update({ must_change_password: true })
+      .eq('id', newUserId);
+
+    if (forcePasswordError) {
+      console.error('Error setting must_change_password flag:', forcePasswordError);
+    }
+
     // If learner and level provided, assign level
     if (role === 'learner' && levelId) {
       const { error: levelError } = await adminClient.from('learner_levels').insert({

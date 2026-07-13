@@ -1340,6 +1340,7 @@ export type Database = {
           full_name: string | null
           id: string
           is_active: boolean | null
+          must_change_password: boolean
           updated_at: string
         }
         Insert: {
@@ -1349,6 +1350,7 @@ export type Database = {
           full_name?: string | null
           id: string
           is_active?: boolean | null
+          must_change_password?: boolean
           updated_at?: string
         }
         Update: {
@@ -1358,6 +1360,7 @@ export type Database = {
           full_name?: string | null
           id?: string
           is_active?: boolean | null
+          must_change_password?: boolean
           updated_at?: string
         }
         Relationships: []
