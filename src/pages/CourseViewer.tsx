@@ -495,6 +495,24 @@ export default function CourseViewer() {
             </div>
           </div>
         )}
+
+        {/* Mark as Completed Button - modules with no quiz require an explicit
+            click before being counted complete, instead of auto-completing. */}
+        {isContentComplete && !moduleHasQuiz && (
+          <div className="fixed bottom-0 left-0 right-0 z-50 bg-card/95 backdrop-blur-sm border-t p-4">
+            <div className="container mx-auto flex items-center justify-center gap-4">
+              <div className="text-center">
+                <p className="text-sm text-muted-foreground mb-2">
+                  You've finished watching this module.
+                </p>
+                <Button size="lg" onClick={handleModuleCompleteWithoutQuiz} className="gap-2">
+                  <Trophy className="w-5 h-5" />
+                  Mark as Completed
+                </Button>
+              </div>
+            </div>
+          </div>
+        )}
       </div>
     );
   }
