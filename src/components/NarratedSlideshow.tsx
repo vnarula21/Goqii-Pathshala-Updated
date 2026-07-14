@@ -5,7 +5,7 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { Progress } from "@/components/ui/progress";
 import {
-  Play, Pause, ChevronLeft, ChevronRight, Volume2, Loader2, Sparkles, CheckCircle, RotateCcw,
+  Play, Pause, ChevronLeft, ChevronRight, Volume2, Loader2, Sparkles, CheckCircle, RotateCcw, Maximize, Minimize,
 } from "lucide-react";
 import { toast } from "sonner";
 
@@ -30,6 +30,7 @@ const SILENT_MS = 6000;
  */
 export default function NarratedSlideshow({ moduleId, title, onModuleComplete }: NarratedSlideshowProps) {
   const audioRef = useRef<HTMLAudioElement>(null);
+  const stageRef = useRef<HTMLDivElement>(null);
   const idxRef = useRef(0);
   const silentTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const autoStarted = useRef(false);
@@ -38,6 +39,23 @@ export default function NarratedSlideshow({ moduleId, title, onModuleComplete }:
   const [playing, setPlaying] = useState(false);
   const [completed, setCompleted] = useState(false);
   const [starting, setStarting] = useState(false);
+  const [isFullscreen, setIsFullscreen] = useState(false);
+
+  useEffect(() => {
+    const onFsChange = () => setIsFullscreen(document.fullscreenElement === stageRef.current);
+    document.addEventListener("fullscreenchange", onFsChange);
+    return () => document.removeEventListener("fullscreenchange", onFsChange);
+  }, []);
+
+  const toggleFullscreen = () => {
+    if (document.fullscreenElement) {
+      document.exitFullscreen();
+    } else {
+      stageRef.current?.requestFullscreen().catch(() => {
+        toast.error("Fullscreen isn't supported in this browser");
+      });
+    }
+  };
 
   const { data: slides = [] } = useQuery({
     queryKey: ["slideshow-assets", moduleId],
@@ -172,7 +190,11 @@ export default function NarratedSlideshow({ moduleId, title, onModuleComplete }:
         {title && <h1 className="text-lg font-bold text-foreground mb-3">{title}</h1>}
         <Card className="overflow-hidden">
           <CardContent className="p-0">
-            <div className="relative bg-black flex items-center justify-center" style={{ aspectRatio: "16 / 9" }}>
+            <div
+              ref={stageRef}
+              className="relative bg-black flex items-center justify-center"
+              style={{ aspectRatio: isFullscreen ? undefined : "16 / 9", width: "100%", height: isFullscreen ? "100vh" : undefined }}
+            >
               {cur?.image && (
                 <img src={cur.image} alt={`Slide ${idx + 1}`} className="max-h-full max-w-full object-contain" />
               )}
@@ -187,6 +209,13 @@ export default function NarratedSlideshow({ moduleId, title, onModuleComplete }:
                   </span>
                 </button>
               )}
+              <button
+                onClick={(e) => { e.stopPropagation(); toggleFullscreen(); }}
+                className="absolute bottom-3 right-3 flex h-9 w-9 items-center justify-center rounded-md bg-black/50 hover:bg-black/70 transition-colors text-white z-10"
+                aria-label={isFullscreen ? "Exit fullscreen" : "Fullscreen"}
+              >
+                {isFullscreen ? <Minimize className="h-4 w-4" /> : <Maximize className="h-4 w-4" />}
+              </button>
             </div>
             <audio ref={audioRef} onEnded={goNext} preload="auto" className="hidden" />
             <div className="flex items-center gap-1 px-4 py-3 border-t">
