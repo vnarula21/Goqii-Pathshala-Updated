@@ -34,6 +34,7 @@ import CourseGroupManagement from "./pages/CourseGroupManagement";
 import TTSTestPage from "./pages/TTSTestPage";
 import ChangePassword from "./pages/ChangePassword";
 import ResetPassword from "./pages/ResetPassword";
+import MyCertificates from "./pages/MyCertificates";
 
 const queryClient = new QueryClient();
 
@@ -67,6 +68,11 @@ const App = () => (
           <Route path="/learner/courses" element={
             <RoleGuard allowedRoles={["learner"]}>
               <Courses />
+            </RoleGuard>
+          } />
+          <Route path="/learner/certificates" element={
+            <RoleGuard allowedRoles={["learner"]}>
+              <MyCertificates />
             </RoleGuard>
           } />
           

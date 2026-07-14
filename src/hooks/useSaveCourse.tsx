@@ -51,6 +51,18 @@ export function useSaveCourse() {
           .single();
         if (error) throw error;
         courseId = newCourse.id;
+
+        // Auto-enable a completion certificate for every new course, using
+        // the course's own passing score as the qualifying threshold. SMEs
+        // can still disable/adjust this later from course settings.
+        const { error: certError } = await supabase.from("certificates").insert({
+          course_id: courseId,
+          is_enabled: true,
+          min_passing_score: data.passing_score,
+        });
+        if (certError) {
+          console.error("Failed to create default certificate config:", certError);
+        }
       }
 
       // Delete existing course_modules and re-insert with new order

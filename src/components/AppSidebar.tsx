@@ -25,7 +25,8 @@ import {
   BarChart3,
   Plus,
   FolderOpen,
-  Building2
+  Building2,
+  Award
 } from "lucide-react";
 
 interface NavItem {
@@ -88,6 +89,7 @@ export function AppSidebar({ children }: AppSidebarProps) {
       return [
         { path: "/learner", label: "Dashboard", icon: LayoutDashboard },
         { path: "/learner/courses", label: "My Courses", icon: GraduationCap },
+        { path: "/learner/certificates", label: "Certificates", icon: Award },
       ];
     }
 

@@ -1,6 +1,7 @@
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { supabase } from "@/integrations/supabase/client";
 import { useGamification } from "@/hooks/useGamification";
+import { useCertificates } from "@/hooks/useCertificates";
 import type { Json } from "@/integrations/supabase/types";
 
 interface ModuleScore {
@@ -23,6 +24,7 @@ interface CourseProgress {
 export function useCourseProgress(courseId: string) {
   const queryClient = useQueryClient();
   const { addXPAsync, updateStreak } = useGamification();
+  const { issueIfEligible } = useCertificates();
 
   const { data: progress, isLoading } = useQuery({
     queryKey: ["course-progress", courseId],
@@ -125,6 +127,7 @@ export function useCourseProgress(courseId: string) {
       return {
         isNewModuleCompletion: completedFlag && !wasModuleAlreadyCompleted,
         isNewCourseCompletion: isCompleted && !wasAlreadyCompleted,
+        overallScore,
         isQuiz,
         isFirstAttempt,
         passed: score >= passingScore,
@@ -152,12 +155,18 @@ export function useCourseProgress(courseId: string) {
         }
       }
 
-      // Award XP for course completion (+25 XP)
+      // Award XP for course completion (+25 XP) and issue a certificate if
+      // this course is configured for one and the score qualifies.
       if (data?.isNewCourseCompletion) {
         try {
           await addXPAsync({ amount: 25, reason: "Course completed!" });
         } catch (e) {
           console.error("Failed to award course XP:", e);
+        }
+        try {
+          await issueIfEligible({ courseId, score: data.overallScore ?? 0 });
+        } catch (e) {
+          console.error("Failed to issue certificate:", e);
         }
       }
     },
@@ -198,7 +207,7 @@ export function useCourseProgress(courseId: string) {
 
       if (error) throw error;
 
-      return { isNewCourseCompletion: isCompleted && !wasAlreadyCompleted };
+      return { isNewCourseCompletion: isCompleted && !wasAlreadyCompleted, overallScore };
     },
     onSuccess: async (data) => {
       queryClient.invalidateQueries({ queryKey: ["course-progress", courseId] });
@@ -207,6 +216,11 @@ export function useCourseProgress(courseId: string) {
           await addXPAsync({ amount: 25, reason: "Course completed!" });
         } catch (e) {
           console.error("Failed to award course XP:", e);
+        }
+        try {
+          await issueIfEligible({ courseId, score: data.overallScore ?? 0 });
+        } catch (e) {
+          console.error("Failed to issue certificate:", e);
         }
       }
     },
