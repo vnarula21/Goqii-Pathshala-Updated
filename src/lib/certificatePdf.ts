@@ -2,24 +2,34 @@ import jsPDF from "jspdf";
 import type { EarnedCertificate } from "@/hooks/useCertificates";
 
 let cachedLogoDataUrl: string | null = null;
+let cachedSignatureDataUrl: string | null = null;
 
-async function getLogoDataUrl(): Promise<string | null> {
-  if (cachedLogoDataUrl) return cachedLogoDataUrl;
+async function loadImageAsDataUrl(path: string): Promise<string | null> {
   try {
-    const response = await fetch("/goqii-logo.png");
+    const response = await fetch(path);
     const blob = await response.blob();
-    const dataUrl = await new Promise<string>((resolve, reject) => {
+    return await new Promise<string>((resolve, reject) => {
       const reader = new FileReader();
       reader.onload = () => resolve(reader.result as string);
       reader.onerror = reject;
       reader.readAsDataURL(blob);
     });
-    cachedLogoDataUrl = dataUrl;
-    return dataUrl;
   } catch (e) {
-    console.error("Failed to load certificate logo:", e);
+    console.error(`Failed to load image at ${path}:`, e);
     return null;
   }
+}
+
+async function getLogoDataUrl(): Promise<string | null> {
+  if (cachedLogoDataUrl) return cachedLogoDataUrl;
+  cachedLogoDataUrl = await loadImageAsDataUrl("/goqii-logo.png");
+  return cachedLogoDataUrl;
+}
+
+async function getSignatureDataUrl(): Promise<string | null> {
+  if (cachedSignatureDataUrl) return cachedSignatureDataUrl;
+  cachedSignatureDataUrl = await loadImageAsDataUrl("/goqii-signature.png");
+  return cachedSignatureDataUrl;
 }
 
 // Draws an elegant double-line border with small corner accents, similar to
@@ -150,16 +160,31 @@ export async function downloadCertificatePDF(cert: EarnedCertificate, learnerNam
 
   // Signature block (bottom right)
   const sigX = pageWidth - 70;
-  const sigY = pageHeight - 34;
+  const sigLineY = pageHeight - 34;
+
+  const signatureDataUrl = await getSignatureDataUrl();
+  if (signatureDataUrl) {
+    const sigImgWidth = 36;
+    const sigImgHeight = 14;
+    doc.addImage(
+      signatureDataUrl,
+      "PNG",
+      sigX - sigImgWidth / 2,
+      sigLineY - sigImgHeight - 1,
+      sigImgWidth,
+      sigImgHeight
+    );
+  }
+
   doc.setDrawColor(darkText);
   doc.setLineWidth(0.3);
-  doc.line(sigX - 20, sigY, sigX + 20, sigY);
+  doc.line(sigX - 20, sigLineY, sigX + 20, sigLineY);
 
   doc.setFont("helvetica", "normal");
   doc.setFontSize(10);
   doc.setTextColor(gray);
-  doc.text("Authorized Signature", sigX, sigY + 6, { align: "center" });
-  doc.text("GOQii Technologies Pvt. Ltd.", sigX, sigY + 11, { align: "center" });
+  doc.text("Authorized Signature", sigX, sigLineY + 6, { align: "center" });
+  doc.text("GOQii Technologies Pvt. Ltd.", sigX, sigLineY + 11, { align: "center" });
 
   const fileName = `Certificate-${(cert.course?.title || "Course").replace(/[^a-zA-Z0-9]/g, "-")}.pdf`;
   doc.save(fileName);
