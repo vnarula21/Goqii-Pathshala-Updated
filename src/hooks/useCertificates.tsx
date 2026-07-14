@@ -20,7 +20,7 @@ export interface EarnedCertificate {
   issued_at: string;
   expires_at: string | null;
   verification_code: string;
-  course: { title: string } | null;
+  course: { title: string; description: string | null } | null;
   certificate: CertificateConfig | null;
 }
 
@@ -45,7 +45,7 @@ export function useCertificates() {
 
       const { data, error } = await supabase
         .from("user_certificates")
-        .select("*, course:courses(title), certificate:certificates(*)")
+        .select("*, course:courses(title, description), certificate:certificates(*)")
         .eq("user_id", userData.user.id)
         .order("issued_at", { ascending: false });
 
