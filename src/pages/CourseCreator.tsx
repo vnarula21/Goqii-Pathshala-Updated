@@ -16,6 +16,7 @@ import { useCourseLibrary } from "@/hooks/useCourseLibrary";
 import { useLevels } from "@/hooks/useLevels";
 import { useAuth } from "@/hooks/useAuth";
 import { ArrowLeft, Save, Loader2 } from "lucide-react";
+import { COURSE_TIME_LIMIT_PRESETS } from "@/lib/relativeDeadlines";
 import { toast } from "sonner";
 
 export default function CourseCreator() {
@@ -30,6 +31,7 @@ export default function CourseCreator() {
   const [title, setTitle] = useState("");
   const [description, setDescription] = useState("");
   const [passingScore, setPassingScore] = useState(70);
+  const [completionDays, setCompletionDays] = useState<string>("none");
   const [isPublished, setIsPublished] = useState(false);
   const [visibility, setVisibility] = useState<"public" | "private">("private");
   const [selectedModuleIds, setSelectedModuleIds] = useState<string[]>([]);
@@ -43,6 +45,9 @@ export default function CourseCreator() {
         setTitle(course.title);
         setDescription(course.description || "");
         setPassingScore(course.passing_score);
+        setCompletionDays(
+          course.completion_days != null ? String(course.completion_days) : "none"
+        );
         setIsPublished(course.is_published);
         setVisibility((course as any).visibility || "private");
         setSelectedModuleIds(
@@ -79,6 +84,7 @@ export default function CourseCreator() {
         title: title.trim(),
         description: description.trim() || undefined,
         passing_score: passingScore,
+        completion_days: completionDays === "none" ? null : Number(completionDays),
         is_published: isPublished,
         module_ids: selectedModuleIds,
         level_id: selectedLevelId,
@@ -208,6 +214,25 @@ export default function CourseCreator() {
                 />
                 <p className="text-xs text-muted-foreground mt-1">
                   Learners must achieve at least {passingScore}% average across all modules to pass
+                </p>
+              </div>
+
+              <div>
+                <Label>Time Limit to Complete Course (Optional)</Label>
+                <Select value={completionDays} onValueChange={setCompletionDays}>
+                  <SelectTrigger className="mt-2">
+                    <SelectValue placeholder="Choose a time limit..." />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {COURSE_TIME_LIMIT_PRESETS.map((preset) => (
+                      <SelectItem key={preset.label} value={preset.value == null ? "none" : String(preset.value)}>
+                        {preset.label}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+                <p className="text-xs text-muted-foreground mt-1">
+                  Counted from when each learner starts this course. Leave as "No time limit" to let learners complete it whenever they're ready.
                 </p>
               </div>
 

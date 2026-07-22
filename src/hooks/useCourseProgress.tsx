@@ -45,6 +45,35 @@ export function useCourseProgress(courseId: string) {
     enabled: !!courseId,
   });
 
+  // Called the moment a learner opens a course, so started_at reflects when
+  // they actually began - not whenever they happen to finish their first
+  // module. This is the anchor point every relative deadline (assignment due
+  // dates, course time limit) counts forward from.
+  const ensureStarted = useMutation({
+    mutationFn: async () => {
+      if (progress) return progress;
+      const { data: userData } = await supabase.auth.getUser();
+      if (!userData.user) return null;
+
+      const { data: newProgress, error } = await supabase
+        .from("course_progress")
+        .insert({
+          user_id: userData.user.id,
+          course_id: courseId,
+          module_scores: {} as Json,
+        })
+        .select()
+        .single();
+
+      // Race with updateProgress creating the row first is fine - just ignore duplicate.
+      if (error && (error as any).code !== "23505") throw error;
+      return newProgress || null;
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["course-progress", courseId] });
+    },
+  });
+
   const updateProgress = useMutation({
     mutationFn: async ({
       moduleId,
@@ -247,6 +276,7 @@ export function useCourseProgress(courseId: string) {
     updateProgress: updateProgress.mutate,
     recheckCompletion: recheckCompletion.mutate,
     resetProgress: resetProgress.mutate,
+    ensureStarted: ensureStarted.mutate,
     isUpdating: updateProgress.isPending,
   };
 }

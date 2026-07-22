@@ -28,6 +28,7 @@ export interface Course {
   description: string | null;
   thumbnail_url: string | null;
   passing_score: number;
+  completion_days: number | null;
   is_published: boolean;
   level_id: string | null;
   created_at: string;

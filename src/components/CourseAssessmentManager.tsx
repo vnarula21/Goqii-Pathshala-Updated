@@ -16,12 +16,11 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { useAssessments } from "@/hooks/useAssessments";
 import { useCourseAssessments } from "@/hooks/useCourseAssessments";
+import { DUE_DATE_PRESETS } from "@/lib/relativeDeadlines";
 import { Plus, Trash2, Calendar, FileText } from "lucide-react";
-import { format } from "date-fns";
 
 interface CourseAssessmentManagerProps {
   courseId: string;
@@ -30,7 +29,7 @@ interface CourseAssessmentManagerProps {
 export function CourseAssessmentManager({ courseId }: CourseAssessmentManagerProps) {
   const [addDialogOpen, setAddDialogOpen] = useState(false);
   const [selectedAssessmentId, setSelectedAssessmentId] = useState("");
-  const [dueDate, setDueDate] = useState("");
+  const [dueDaysAfterStart, setDueDaysAfterStart] = useState("none");
 
   const { assessments } = useAssessments();
   const { 
@@ -50,12 +49,12 @@ export function CourseAssessmentManager({ courseId }: CourseAssessmentManagerPro
 
     await addAssessmentToCourse.mutateAsync({
       assessmentId: selectedAssessmentId,
-      dueDate: dueDate || undefined,
+      dueDaysAfterStart: dueDaysAfterStart === "none" ? null : Number(dueDaysAfterStart),
     });
 
     setAddDialogOpen(false);
     setSelectedAssessmentId("");
-    setDueDate("");
+    setDueDaysAfterStart("none");
   };
 
   return (
@@ -101,11 +100,21 @@ export function CourseAssessmentManager({ courseId }: CourseAssessmentManagerPro
 
                 <div className="space-y-2">
                   <Label>Due Date (Optional)</Label>
-                  <Input
-                    type="datetime-local"
-                    value={dueDate}
-                    onChange={(e) => setDueDate(e.target.value)}
-                  />
+                  <Select value={dueDaysAfterStart} onValueChange={setDueDaysAfterStart}>
+                    <SelectTrigger>
+                      <SelectValue placeholder="Choose when this is due..." />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {DUE_DATE_PRESETS.map((preset) => (
+                        <SelectItem key={preset.label} value={preset.value == null ? "none" : String(preset.value)}>
+                          {preset.label}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                  <p className="text-xs text-muted-foreground">
+                    Counted from when each learner starts the course.
+                  </p>
                 </div>
 
                 <div className="flex justify-end gap-2">
@@ -147,10 +156,10 @@ export function CourseAssessmentManager({ courseId }: CourseAssessmentManagerPro
                   <p className="font-medium truncate">
                     {ca.assessment?.title}
                   </p>
-                  {ca.due_date && (
+                  {ca.due_days_after_start != null && (
                     <p className="text-sm text-muted-foreground flex items-center gap-1">
                       <Calendar className="h-3 w-3" />
-                      Due: {format(new Date(ca.due_date), "MMM d, yyyy h:mm a")}
+                      Due {ca.due_days_after_start} days after learner starts the course
                     </p>
                   )}
                 </div>

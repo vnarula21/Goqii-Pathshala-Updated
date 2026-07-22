@@ -18,10 +18,10 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { useCourseLibrary } from "@/hooks/useCourseLibrary";
 import { useCourseAssessments } from "@/hooks/useCourseAssessments";
+import { DUE_DATE_PRESETS } from "@/lib/relativeDeadlines";
 import { Plus, Loader2, Check } from "lucide-react";
 
 interface CourseAssignmentDialogProps {
@@ -39,7 +39,7 @@ export function CourseAssignmentDialog({
 }: CourseAssignmentDialogProps) {
   const [open, setOpen] = useState(false);
   const [selectedCourseId, setSelectedCourseId] = useState<string>("");
-  const [dueDate, setDueDate] = useState<string>("");
+  const [dueDaysAfterStart, setDueDaysAfterStart] = useState<string>("none");
   const [isSubmitting, setIsSubmitting] = useState(false);
 
   const { courses } = useCourseLibrary();
@@ -72,11 +72,11 @@ export function CourseAssignmentDialog({
     try {
       await addAssessmentToCourse.mutateAsync({
         assessmentId,
-        dueDate: dueDate || undefined,
+        dueDaysAfterStart: dueDaysAfterStart === "none" ? null : Number(dueDaysAfterStart),
       });
       setOpen(false);
       setSelectedCourseId("");
-      setDueDate("");
+      setDueDaysAfterStart("none");
       onAssigned?.();
     } finally {
       setIsSubmitting(false);
@@ -127,12 +127,21 @@ export function CourseAssignmentDialog({
 
           <div className="space-y-2">
             <Label htmlFor="dueDate">Due Date (Optional)</Label>
-            <Input
-              id="dueDate"
-              type="datetime-local"
-              value={dueDate}
-              onChange={(e) => setDueDate(e.target.value)}
-            />
+            <Select value={dueDaysAfterStart} onValueChange={setDueDaysAfterStart}>
+              <SelectTrigger id="dueDate">
+                <SelectValue placeholder="Choose when this is due..." />
+              </SelectTrigger>
+              <SelectContent>
+                {DUE_DATE_PRESETS.map((preset) => (
+                  <SelectItem key={preset.label} value={preset.value == null ? "none" : String(preset.value)}>
+                    {preset.label}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+            <p className="text-xs text-muted-foreground">
+              Counted from when each learner starts the course, not a fixed calendar date - so everyone gets the same amount of time.
+            </p>
           </div>
         </div>
 

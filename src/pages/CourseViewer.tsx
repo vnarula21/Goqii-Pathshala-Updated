@@ -10,6 +10,7 @@ import { Progress } from "@/components/ui/progress";
 import { Skeleton } from "@/components/ui/skeleton";
 import { useCourseProgress } from "@/hooks/useCourseProgress";
 import { useCourseAssessments } from "@/hooks/useCourseAssessments";
+import { computeRelativeDeadline, formatDaysRemaining, isOverdue } from "@/lib/relativeDeadlines";
 import { useMySubmissions } from "@/hooks/useAssessmentSubmissions";
 import { useMyModuleAssignmentSubmissions } from "@/hooks/useModuleAssignmentSubmissions";
 import { useAuth } from "@/hooks/useAuth";
@@ -56,6 +57,7 @@ interface Course {
   title: string;
   description: string | null;
   passing_score: number;
+  completion_days: number | null;
   course_modules: CourseModule[];
 }
 
@@ -64,12 +66,12 @@ export default function CourseViewer() {
   const navigate = useNavigate();
   const location = useLocation();
   const { user, loading: authLoading } = useAuth();
-  const { isSMEExpert } = useUserRole();
+  const { isSMEExpert, role } = useUserRole();
   const [activeModuleIndex, setActiveModuleIndex] = useState<number | null>(null);
   const [activeAssessmentId, setActiveAssessmentId] = useState<string | null>(null);
   const [addModuleDialogOpen, setAddModuleDialogOpen] = useState(false);
   const [isContentComplete, setIsContentComplete] = useState(false);
-  const { progress, isLoading: progressLoading, resetProgress, updateProgress, recheckCompletion } = useCourseProgress(id || "");
+  const { progress, isLoading: progressLoading, resetProgress, updateProgress, recheckCompletion, ensureStarted } = useCourseProgress(id || "");
   const { courseAssessments, isLoading: assessmentsLoading } = useCourseAssessments(id || "");
   const { submissions } = useMySubmissions();
   const { submissions: moduleAssignmentSubs } = useMyModuleAssignmentSubmissions({ courseId: id });
@@ -125,6 +127,17 @@ export default function CourseViewer() {
     },
     enabled: !!id,
   });
+
+  // The moment a learner opens the course, start their progress clock -
+  // this is the anchor point for any relative due dates (assignments, course
+  // time limit). Only for learners; managers/admins previewing a course
+  // shouldn't get a progress row created for themselves.
+  useEffect(() => {
+    if (course && role === "learner") {
+      ensureStarted();
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [course?.id, role]);
 
   // Fetch quizzes and assignments from the new tables for all modules in the course
   const moduleIds = course?.course_modules?.map(cm => cm.module.id) || [];
@@ -328,6 +341,7 @@ export default function CourseViewer() {
               description={activeAssessment.assessment.description}
               instructions={activeAssessment.assessment.instructions}
               maxScore={activeAssessment.assessment.max_score}
+              dueDate={computeRelativeDeadline(progress?.started_at, activeAssessment.due_days_after_start)}
               onSubmitted={() => setActiveAssessmentId(null)}
             />
           </div>
@@ -544,6 +558,21 @@ export default function CourseViewer() {
             </Button>
           )}
         </div>
+
+        {course.completion_days != null && !progress?.is_completed && (() => {
+          const courseDeadline = computeRelativeDeadline(progress?.started_at, course.completion_days);
+          if (!courseDeadline) return null;
+          return (
+            <div className={`mb-6 flex items-center gap-2 p-3 rounded-lg border text-sm ${
+              isOverdue(courseDeadline) ? "bg-destructive/10 border-destructive/30 text-destructive" : "bg-muted border-border text-muted-foreground"
+            }`}>
+              <Clock className="w-4 h-4 shrink-0" />
+              <span>
+                {formatDaysRemaining(courseDeadline)} to complete this course (due {courseDeadline.toLocaleDateString()})
+              </span>
+            </div>
+          );
+        })()}
 
         {/* Progress Overview */}
         <Card className="mb-8">

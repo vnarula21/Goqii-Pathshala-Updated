@@ -299,6 +299,7 @@ export type Database = {
           course_id: string
           created_at: string
           due_date: string | null
+          due_days_after_start: number | null
           id: string
           order_index: number
         }
@@ -307,6 +308,7 @@ export type Database = {
           course_id: string
           created_at?: string
           due_date?: string | null
+          due_days_after_start?: number | null
           id?: string
           order_index?: number
         }
@@ -315,6 +317,7 @@ export type Database = {
           course_id?: string
           created_at?: string
           due_date?: string | null
+          due_days_after_start?: number | null
           id?: string
           order_index?: number
         }

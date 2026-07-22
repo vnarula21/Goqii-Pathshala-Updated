@@ -8,6 +8,7 @@ interface SaveCourseData {
   description?: string;
   thumbnail_url?: string;
   passing_score: number;
+  completion_days?: number | null;
   is_published: boolean;
   module_ids: string[]; // ordered list of module IDs
   level_id?: string;
@@ -27,6 +28,7 @@ export function useSaveCourse() {
         description: data.description || null,
         thumbnail_url: data.thumbnail_url || null,
         passing_score: data.passing_score,
+        completion_days: data.completion_days ?? null,
         is_published: data.is_published,
         user_id: userData.user.id,
         level_id: data.level_id || null,

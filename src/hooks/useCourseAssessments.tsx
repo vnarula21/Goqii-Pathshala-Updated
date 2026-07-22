@@ -9,6 +9,7 @@ export interface CourseAssessment {
   assessment_id: string;
   order_index: number;
   due_date: string | null;
+  due_days_after_start: number | null;
   created_at: string;
   assessment?: Assessment;
 }
@@ -41,10 +42,10 @@ export function useCourseAssessments(courseId: string) {
   const addAssessmentToCourse = useMutation({
     mutationFn: async ({
       assessmentId,
-      dueDate,
+      dueDaysAfterStart,
     }: {
       assessmentId: string;
-      dueDate?: string;
+      dueDaysAfterStart?: number | null;
     }) => {
       const orderIndex = (courseAssessments?.length || 0);
       
@@ -54,7 +55,7 @@ export function useCourseAssessments(courseId: string) {
           course_id: courseId,
           assessment_id: assessmentId,
           order_index: orderIndex,
-          due_date: dueDate || null,
+          due_days_after_start: dueDaysAfterStart ?? null,
         })
         .select()
         .single();
@@ -100,11 +101,26 @@ export function useCourseAssessments(courseId: string) {
     },
   });
 
+  const updateDueDaysAfterStart = useMutation({
+    mutationFn: async ({ id, days }: { id: string; days: number | null }) => {
+      const { error } = await supabase
+        .from("course_assessments")
+        .update({ due_days_after_start: days })
+        .eq("id", id);
+
+      if (error) throw error;
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["course-assessments", courseId] });
+    },
+  });
+
   return {
     courseAssessments,
     isLoading,
     addAssessmentToCourse,
     removeAssessmentFromCourse,
     updateDueDate,
+    updateDueDaysAfterStart,
   };
 }

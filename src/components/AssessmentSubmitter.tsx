@@ -5,9 +5,10 @@ import { Label } from "@/components/ui/label";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { useMySubmissions, SubmittedFile } from "@/hooks/useAssessmentSubmissions";
 import { supabase } from "@/integrations/supabase/client";
-import { Upload, FileText, X, Loader2 } from "lucide-react";
+import { Upload, FileText, X, Loader2, Clock } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { validateFile } from "@/lib/fileValidation";
+import { formatDaysRemaining, isOverdue } from "@/lib/relativeDeadlines";
 
 interface AssessmentSubmitterProps {
   assessmentId: string;
@@ -16,6 +17,7 @@ interface AssessmentSubmitterProps {
   description?: string | null;
   instructions?: string | null;
   maxScore: number;
+  dueDate?: Date | null;
   onSubmitted?: () => void;
 }
 
@@ -26,6 +28,7 @@ export function AssessmentSubmitter({
   description,
   instructions,
   maxScore,
+  dueDate,
   onSubmitted,
 }: AssessmentSubmitterProps) {
   const [responseText, setResponseText] = useState("");
@@ -114,6 +117,12 @@ export function AssessmentSubmitter({
       <CardHeader>
         <CardTitle>{title}</CardTitle>
         {description && <CardDescription>{description}</CardDescription>}
+        {dueDate && (
+          <p className={`text-sm flex items-center gap-1.5 mt-1 ${isOverdue(dueDate) ? "text-destructive" : "text-muted-foreground"}`}>
+            <Clock className="h-3.5 w-3.5" />
+            {formatDaysRemaining(dueDate)} (due {dueDate.toLocaleDateString()})
+          </p>
+        )}
       </CardHeader>
       <CardContent className="space-y-6">
         {instructions && (
