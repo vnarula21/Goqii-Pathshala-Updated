@@ -784,6 +784,19 @@ export default function CourseViewer() {
                             Score: {score}/{ca.assessment?.max_score || 100}
                           </Badge>
                         )}
+                        {status !== "graded" && (() => {
+                          const dueDate = computeRelativeDeadline(progress?.started_at, ca.due_days_after_start);
+                          if (!dueDate) return null;
+                          return (
+                            <Badge
+                              variant="outline"
+                              className={`text-xs gap-1 ${isOverdue(dueDate) ? "border-destructive text-destructive" : ""}`}
+                            >
+                              <Clock className="w-3 h-3" />
+                              {formatDaysRemaining(dueDate)}
+                            </Badge>
+                          );
+                        })()}
                       </div>
                     </div>
 
