@@ -2,6 +2,8 @@ import { Link } from "react-router-dom";
 import { AppSidebar } from "@/components/AppSidebar";
 import { Button } from "@/components/ui/button";
 import { LearnerProgressTable } from "@/components/LearnerProgressTable";
+import { CourseProgressSummaryTable } from "@/components/CourseProgressSummaryTable";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { ArrowLeft } from "lucide-react";
 
 export default function LearnerProgressPage() {
@@ -17,15 +19,25 @@ export default function LearnerProgressPage() {
               </Link>
             </Button>
             <div className="flex-1">
-              <h1 className="text-2xl font-bold">Learner Progress</h1>
+              <h1 className="text-2xl font-bold">Progress</h1>
               <p className="text-muted-foreground">
                 Track course and assessment progress for all learners
               </p>
             </div>
           </div>
 
-          {/* Progress Table */}
-          <LearnerProgressTable />
+          <Tabs defaultValue="learners">
+            <TabsList className="mb-4">
+              <TabsTrigger value="learners">Learner Progress</TabsTrigger>
+              <TabsTrigger value="courses">Course Progress</TabsTrigger>
+            </TabsList>
+            <TabsContent value="learners">
+              <LearnerProgressTable />
+            </TabsContent>
+            <TabsContent value="courses">
+              <CourseProgressSummaryTable />
+            </TabsContent>
+          </Tabs>
         </div>
       </div>
     </AppSidebar>

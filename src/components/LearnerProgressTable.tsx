@@ -12,8 +12,9 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { useLearnerProgress, LearnerProgressData } from "@/hooks/useLearnerProgress";
-import { Search, ChevronDown, ChevronUp, User } from "lucide-react";
+import { Search, ChevronDown, ChevronUp, User, Download } from "lucide-react";
 import { Skeleton } from "@/components/ui/skeleton";
+import { exportToCsv } from "@/lib/exportCsv";
 
 export function LearnerProgressTable() {
   const { learnersProgress, isLoading } = useLearnerProgress();
@@ -38,6 +39,35 @@ export function LearnerProgressTable() {
     return { completedCourses, totalCourses, avgScore };
   };
 
+  const handleExport = () => {
+    if (!filteredLearners?.length) return;
+
+    const rows = filteredLearners.flatMap((lp) => {
+      if (lp.courses.length === 0) {
+        return [{
+          "Learner Name": lp.learner.full_name || "",
+          "Email": lp.learner.email,
+          "Course": "",
+          "Status": "No courses started",
+          "Score": "",
+          "Started": "",
+          "Completed": "",
+        }];
+      }
+      return lp.courses.map((course) => ({
+        "Learner Name": lp.learner.full_name || "",
+        "Email": lp.learner.email,
+        "Course": course.course_title,
+        "Status": course.is_completed ? "Completed" : "In Progress",
+        "Score": course.overall_score ?? "",
+        "Started": course.started_at ? new Date(course.started_at).toLocaleDateString() : "",
+        "Completed": course.completed_at ? new Date(course.completed_at).toLocaleDateString() : "",
+      }));
+    });
+
+    exportToCsv(`learner-progress-${new Date().toISOString().slice(0, 10)}.csv`, rows);
+  };
+
   if (isLoading) {
     return (
       <Card>
@@ -60,14 +90,20 @@ export function LearnerProgressTable() {
       <CardHeader>
         <div className="flex items-center justify-between">
           <CardTitle>Learner Progress</CardTitle>
-          <div className="relative w-64">
-            <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
-            <Input
-              placeholder="Search learners..."
-              value={search}
-              onChange={(e) => setSearch(e.target.value)}
-              className="pl-9"
-            />
+          <div className="flex items-center gap-2">
+            <div className="relative w-64">
+              <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+              <Input
+                placeholder="Search learners..."
+                value={search}
+                onChange={(e) => setSearch(e.target.value)}
+                className="pl-9"
+              />
+            </div>
+            <Button variant="outline" onClick={handleExport} disabled={!filteredLearners?.length}>
+              <Download className="h-4 w-4 mr-2" />
+              Export CSV
+            </Button>
           </div>
         </div>
       </CardHeader>
