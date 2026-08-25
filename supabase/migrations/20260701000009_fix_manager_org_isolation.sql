@@ -93,58 +93,10 @@ USING (
   ))
 );
 
--- learner_levels: a manager could view/assign/update ANY learner's level
--- system-wide, regardless of organization.
-DROP POLICY IF EXISTS "Managers can view learner levels" ON public.learner_levels;
-CREATE POLICY "Managers can view learner levels in their organization"
-ON public.learner_levels
-FOR SELECT
-TO authenticated
-USING (
-  public.has_role(auth.uid(), 'admin') OR
-  (public.has_role(auth.uid(), 'manager') AND EXISTS (
-    SELECT 1
-    FROM public.user_organizations learner_org
-    JOIN public.user_organizations manager_org
-      ON manager_org.organization_id = learner_org.organization_id
-    WHERE learner_org.user_id = learner_levels.user_id
-    AND manager_org.user_id = auth.uid()
-  ))
-);
+-- Note: learner_levels does NOT get fixed here - that table was already
+-- dropped from the database (an old level-management feature that was
+-- removed), so there's nothing to update there.
 
-DROP POLICY IF EXISTS "Managers can assign learner levels" ON public.learner_levels;
-CREATE POLICY "Managers can assign learner levels in their organization"
-ON public.learner_levels
-FOR INSERT
-TO authenticated
-WITH CHECK (
-  public.has_role(auth.uid(), 'admin') OR
-  (public.has_role(auth.uid(), 'manager') AND EXISTS (
-    SELECT 1
-    FROM public.user_organizations learner_org
-    JOIN public.user_organizations manager_org
-      ON manager_org.organization_id = learner_org.organization_id
-    WHERE learner_org.user_id = learner_levels.user_id
-    AND manager_org.user_id = auth.uid()
-  ))
-);
-
-DROP POLICY IF EXISTS "Managers can update learner levels" ON public.learner_levels;
-CREATE POLICY "Managers can update learner levels in their organization"
-ON public.learner_levels
-FOR UPDATE
-TO authenticated
-USING (
-  public.has_role(auth.uid(), 'admin') OR
-  (public.has_role(auth.uid(), 'manager') AND EXISTS (
-    SELECT 1
-    FROM public.user_organizations learner_org
-    JOIN public.user_organizations manager_org
-      ON manager_org.organization_id = learner_org.organization_id
-    WHERE learner_org.user_id = learner_levels.user_id
-    AND manager_org.user_id = auth.uid()
-  ))
-);
 -- course_assignments: "Managers can manage course assignments" covered
 -- SELECT/INSERT/UPDATE/DELETE with zero org scoping - a manager could view,
 -- create, or delete course assignments for learners in ANY organization.
