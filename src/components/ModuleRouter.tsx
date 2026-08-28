@@ -11,6 +11,7 @@ import ArticleModuleDisplay from "./ArticleModuleDisplay";
 import DocumentModuleDisplay from "./DocumentModuleDisplay";
 import VideoScriptDisplay from "./VideoScriptDisplay";
 import type { QuizQuestion } from "./QuizBuilder";
+import { extractQuestionsToShow } from "@/lib/quizShuffle";
 
 /**
  * Unified quiz data extraction - handles all possible quiz data locations:
@@ -180,6 +181,7 @@ export default function ModuleRouter({
   // Unified quiz data extraction - check all possible locations
   const quizData = extractQuizData(module);
   const hasQuiz = Array.isArray(quizData) && quizData.length > 0;
+  const questionsToShow = extractQuestionsToShow(module);
 
   const handleContentComplete = () => {
     setIsContentComplete(true);
@@ -197,6 +199,7 @@ export default function ModuleRouter({
         savedModuleId={savedModuleId}
         isModuleComplete={isContentComplete}
         passingScore={passingScore}
+        questionsToShow={questionsToShow}
         onComplete={onComplete}
       />
     );

@@ -1,5 +1,5 @@
 import { useParams, useNavigate, useLocation } from "react-router-dom";
-import { useEffect, useState } from "react";
+import { useEffect, useState, useMemo } from "react";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
 import { ArrowLeft } from "lucide-react";
@@ -8,6 +8,7 @@ import { useModuleQuizzes } from "@/hooks/useModuleQuizzes";
 import { useCourseProgress } from "@/hooks/useCourseProgress";
 import { useModuleAssignments } from "@/hooks/useModuleAssignments";
 import { useMyModuleAssignmentSubmissions } from "@/hooks/useModuleAssignmentSubmissions";
+import { selectShuffledQuizQuestions } from "@/lib/quizShuffle";
 import QuizModuleDisplay from "@/components/QuizModuleDisplay";
 import { toast } from "sonner";
 import { Trophy } from "lucide-react";
@@ -77,6 +78,13 @@ export default function ModuleQuizPage() {
 
   const questions = getQuizQuestions();
   const effectiveTitle = quizData?.module_name || moduleData?.title || moduleTitle;
+
+  const rawQuizSettings = quizData?.settings || (moduleData?.quiz_data as Record<string, any> | null)?.settings;
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  const shuffledQuestions = useMemo(
+    () => selectShuffledQuizQuestions(questions, rawQuizSettings?.questionsToShow),
+    [moduleId]
+  );
 
   const { data: assignments } = useModuleAssignments(moduleId);
   const assignmentCount = assignments?.length || 0;
@@ -192,7 +200,7 @@ export default function ModuleQuizPage() {
         <QuizModuleDisplay
           module={{
             title: `${effectiveTitle} - Quiz`,
-            questions: questions,
+            questions: shuffledQuestions,
           }}
           savedModuleId={moduleId}
           passingScore={passingScore}

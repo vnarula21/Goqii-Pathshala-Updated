@@ -24,6 +24,7 @@ export default function QuizBuilder() {
   const [selectedTags, setSelectedTags] = useState<string[]>([]);
   const [questions, setQuestions] = useState<QuizQuestion[]>([]);
   const [timeLimitMinutes, setTimeLimitMinutes] = useState<number | undefined>(undefined);
+  const [questionsToShow, setQuestionsToShow] = useState<number | undefined>(undefined);
 
   const handleSave = () => {
     if (!title.trim()) {
@@ -50,6 +51,7 @@ export default function QuizBuilder() {
         type: "quiz", 
         questions,
         quiz_time_limit_minutes: timeLimitMinutes,
+        quiz_questions_to_show: questionsToShow,
       },
       moduleType: "quiz",
       tagIds: selectedTags.length > 0 ? selectedTags : undefined,
@@ -140,6 +142,31 @@ export default function QuizBuilder() {
               {timeLimitMinutes 
                 ? `Learners will have ${timeLimitMinutes} minutes to complete this quiz. Auto-submits when time expires.`
                 : "No time limit. Learners can take as long as they need."}
+            </p>
+          </div>
+
+          {/* Questions to show */}
+          <div className="space-y-2 pt-2 border-t">
+            <Label htmlFor="questions-to-show">Questions Shown to Each Learner</Label>
+            <div className="flex items-center gap-3">
+              <Input
+                id="questions-to-show"
+                type="number"
+                min={1}
+                max={Math.max(questions.length, 1)}
+                value={questionsToShow ?? questions.length}
+                onChange={(e) => {
+                  const val = parseInt(e.target.value) || 1;
+                  setQuestionsToShow(Math.max(1, Math.min(val, Math.max(questions.length, 1))));
+                }}
+                className="w-24"
+              />
+              <span className="text-sm text-muted-foreground">
+                of {questions.length} question{questions.length !== 1 ? "s" : ""} in the pool
+              </span>
+            </div>
+            <p className="text-xs text-muted-foreground">
+              Add more questions than needed, and each learner will get a random, shuffled subset - this reduces answer-copying between learners.
             </p>
           </div>
         </CardContent>

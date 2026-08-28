@@ -55,6 +55,10 @@ export interface QuizSettings {
   numberOfQuestions: number;
   difficulty: "Easy" | "Medium" | "Hard";
   types: ("MCQ" | "True-False" | "Scenario")[];
+  /** How many of the generated/included questions to randomly show each
+   * learner (a shuffled subset, different per attempt, to reduce copying
+   * answers between learners). Falls back to showing all questions if unset. */
+  questionsToShow?: number;
 }
 
 export interface AssignmentSettings {
@@ -145,6 +149,7 @@ export interface UseModuleForge {
   generateQuiz: (settings: QuizSettings) => Promise<QuizQuestion[]>;
   generateAssignments: (settings: AssignmentSettings) => Promise<Assignment[]>;
   updateQuizQuestion: (questionId: string, updates: Partial<QuizQuestion>) => void;
+  updateQuizSettings: (updates: Partial<QuizSettings>) => void;
   updateAssignment: (assignmentId: string, updates: Partial<Assignment>) => void;
   updateFormattedContent: (content: any) => void;
   
@@ -382,6 +387,19 @@ export function useModuleForge(): UseModuleForge {
     });
   }, []);
 
+  const updateQuizSettings = useCallback((updates: Partial<QuizSettings>) => {
+    setModule((prev) => {
+      if (!prev.quizData) return prev;
+      return {
+        ...prev,
+        quizData: {
+          ...prev.quizData,
+          settings: { ...prev.quizData.settings, ...updates },
+        },
+      };
+    });
+  }, []);
+
   const updateAssignment = useCallback((assignmentId: string, updates: Partial<Assignment>) => {
     setModule((prev) => {
       if (!prev.assignmentData) return prev;
@@ -574,6 +592,7 @@ export function useModuleForge(): UseModuleForge {
     generateQuiz,
     generateAssignments,
     updateQuizQuestion,
+    updateQuizSettings,
     updateAssignment,
     updateFormattedContent,
     submitToSME,

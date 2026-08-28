@@ -3,6 +3,7 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Checkbox } from "@/components/ui/checkbox";
+import { Input } from "@/components/ui/input";
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible";
 import { Pencil, ChevronDown, HelpCircle, ClipboardList, Loader2, ArrowRight } from "lucide-react";
 import { UseModuleForge } from "@/hooks/useModuleForge";
@@ -175,6 +176,32 @@ export default function Step4FinalizeModule({ forge }: Step4Props) {
                         <Badge variant="secondary" className="text-xs">{q.type}</Badge>
                       </div>
                     ))}
+                    {(() => {
+                      const includedCount = module.quizData?.questions.filter((q) => q.included).length || 0;
+                      const questionsToShow = module.quizData?.settings?.questionsToShow ?? includedCount;
+                      if (includedCount === 0) return null;
+                      return (
+                        <div className="flex items-center justify-between gap-3 pt-3 mt-1 border-t">
+                          <div>
+                            <p className="text-sm font-medium">Questions shown to each learner</p>
+                            <p className="text-xs text-muted-foreground">
+                              A random subset is picked from the {includedCount} question{includedCount !== 1 ? "s" : ""} above, shuffled per learner - reduces answer-copying between learners.
+                            </p>
+                          </div>
+                          <Input
+                            type="number"
+                            min={1}
+                            max={includedCount}
+                            value={Math.min(questionsToShow, includedCount)}
+                            onChange={(e) => {
+                              const val = parseInt(e.target.value) || 1;
+                              forge.updateQuizSettings({ questionsToShow: Math.max(1, Math.min(val, includedCount)) });
+                            }}
+                            className="w-20 shrink-0"
+                          />
+                        </div>
+                      );
+                    })()}
                   </div>
                 )}
               </CardContent>

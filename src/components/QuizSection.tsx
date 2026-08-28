@@ -1,10 +1,11 @@
-import { useState } from "react";
+import { useState, useMemo } from "react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { HelpCircle, Lock, Play } from "lucide-react";
 import { useUserRole } from "@/hooks/useUserRole";
 import QuizModuleDisplay from "./QuizModuleDisplay";
 import type { QuizQuestion } from "./QuizBuilder";
+import { selectShuffledQuizQuestions } from "@/lib/quizShuffle";
 
 interface QuizSectionProps {
   quiz: QuizQuestion[];
@@ -12,6 +13,7 @@ interface QuizSectionProps {
   savedModuleId?: string;
   isModuleComplete: boolean;
   passingScore?: number;
+  questionsToShow?: number;
   onComplete?: (score: number, isFirstAttempt: boolean) => void;
 }
 
@@ -21,12 +23,19 @@ export default function QuizSection({
   savedModuleId,
   isModuleComplete,
   passingScore = 70,
+  questionsToShow,
   onComplete,
 }: QuizSectionProps) {
   const { isSME, isSMEExpert } = useUserRole();
   const [quizStarted, setQuizStarted] = useState(false);
-  
+
   const isContentCreator = isSME || isSMEExpert;
+
+  // Shuffled + subset-selected only for the learner-facing attempt. Memoized
+  // so it's picked ONCE per quiz session (component mount) and stays stable
+  // while the learner is answering - it must not reshuffle mid-attempt.
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  const learnerQuiz = useMemo(() => selectShuffledQuizQuestions(quiz, questionsToShow), []);
 
   // SME/SME Expert View: Direct quiz preview
   if (isContentCreator) {
@@ -75,7 +84,7 @@ export default function QuizSection({
           <CardContent className="text-center space-y-4">
             <p className="text-muted-foreground">
               {isModuleComplete
-                ? `This quiz has ${quiz.length} question${quiz.length !== 1 ? "s" : ""}. Good luck!`
+                ? `This quiz has ${learnerQuiz.length} question${learnerQuiz.length !== 1 ? "s" : ""}. Good luck!`
                 : "Complete the module content above to unlock the quiz."}
             </p>
             <Button
@@ -104,7 +113,7 @@ export default function QuizSection({
       <QuizModuleDisplay
         module={{
           title: `${moduleTitle} - Quiz`,
-          questions: quiz,
+          questions: learnerQuiz,
         }}
         savedModuleId={savedModuleId}
         passingScore={passingScore}
