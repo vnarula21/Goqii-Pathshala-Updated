@@ -229,6 +229,18 @@ export default function ModuleUploader() {
       // (speaker notes → edge-tts, or LLM-generated narration for note-less
       // decks). No separate pre-generation step is needed here.
 
+      // Auto-generate a thumbnail from the first slide/page of the uploaded
+      // file. Fire-and-forget - the module list will just show a fallback
+      // icon until this finishes (usually a few seconds).
+      if (newModuleId && (dbModuleType === "ppt" || dbModuleType === "pdf" || dbModuleType === "document")) {
+        void supabase.functions
+          .invoke("generate-module-thumbnail", { body: { moduleId: newModuleId } })
+          .then(({ error: fnError }) => {
+            if (fnError) console.error("generate-module-thumbnail failed:", fnError);
+          })
+          .catch((e) => console.error("generate-module-thumbnail failed:", e));
+      }
+
       // Auto-kick the narrated-video render (slides → narration → ffmpeg MP4).
       // Fire-and-forget: the module viewer shows live progress and plays the
       // finished MP4. We don't await here so the upload finishes promptly.

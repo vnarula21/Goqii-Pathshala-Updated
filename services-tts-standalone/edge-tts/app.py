@@ -127,6 +127,9 @@ def generate_voice(req: VoiceRequest, x_api_key: str = Header(default="")):
 class RenderRequest(BaseModel):
     pptxUrl: str
     dpi: int = 150
+    # Optional: only render the first N pages/slides (e.g. 1 for a thumbnail),
+    # much faster than rendering an entire deck when only the first image is needed.
+    maxPages: int | None = None
 
 
 def _pptx_to_pdf(pptx_path: str, outdir: str) -> str:
@@ -155,12 +158,22 @@ def render_slides(req: RenderRequest, x_api_key: str = Header(default="")):
         raise HTTPException(status_code=401, detail="Invalid or missing x-api-key")
     try:
         with tempfile.TemporaryDirectory() as d:
-            pptx = os.path.join(d, "deck.pptx")
-            _download(req.pptxUrl, pptx)
-            pdf = _pptx_to_pdf(pptx, d)
+            # Accept PPTX/PPT/DOC/DOCX decks as well as plain PDFs. If the
+            # source is already a PDF, skip the LibreOffice conversion step
+            # entirely and go straight to pdftoppm - this lets the same
+            # endpoint serve both "render a slide deck" and "render an
+            # uploaded PDF/document" callers (e.g. module thumbnails).
+            is_pdf = req.pptxUrl.split("?")[0].lower().endswith(".pdf")
+            src = os.path.join(d, "deck.pdf" if is_pdf else "deck.pptx")
+            _download(req.pptxUrl, src)
+            pdf = src if is_pdf else _pptx_to_pdf(src, d)
             prefix = os.path.join(d, "slide")
+            cmd = ["pdftoppm", "-png", "-r", str(req.dpi)]
+            if req.maxPages:
+                cmd += ["-f", "1", "-l", str(req.maxPages)]
+            cmd += [pdf, prefix]
             p = subprocess.run(
-                ["pdftoppm", "-png", "-r", str(req.dpi), pdf, prefix],
+                cmd,
                 stdout=subprocess.PIPE, stderr=subprocess.PIPE, timeout=180,
             )
             if p.returncode != 0:
@@ -174,16 +187,20 @@ def render_slides(req: RenderRequest, x_api_key: str = Header(default="")):
             images = [base64.b64encode(open(f, "rb").read()).decode() for f in pngs]
 
             # Per-slide visible text — used as fallback narration for decks that
-            # have no speaker notes, so every deck still becomes a narrated video.
+            # have no speaker notes, so every deck still becomes a narrated
+            # video. Skipped for thumbnail-only requests (maxPages set) since
+            # it's not needed there and running pdftotext on a huge PDF just
+            # to throw the text away wastes time.
             texts: list[str] = []
-            txt_path = os.path.join(d, "deck.txt")
-            tp = subprocess.run(
-                ["pdftotext", "-layout", pdf, txt_path],
-                stdout=subprocess.PIPE, stderr=subprocess.PIPE, timeout=120,
-            )
-            if tp.returncode == 0 and os.path.exists(txt_path):
-                raw = open(txt_path, encoding="utf-8", errors="ignore").read()
-                texts = [" ".join(pg.split()) for pg in raw.split("\f")]
+            if not req.maxPages:
+                txt_path = os.path.join(d, "deck.txt")
+                tp = subprocess.run(
+                    ["pdftotext", "-layout", pdf, txt_path],
+                    stdout=subprocess.PIPE, stderr=subprocess.PIPE, timeout=120,
+                )
+                if tp.returncode == 0 and os.path.exists(txt_path):
+                    raw = open(txt_path, encoding="utf-8", errors="ignore").read()
+                    texts = [" ".join(pg.split()) for pg in raw.split("\f")]
             # Align text count to image count (pad/trim).
             texts = (texts + [""] * len(images))[: len(images)]
         return {"count": len(images), "images": images, "texts": texts}

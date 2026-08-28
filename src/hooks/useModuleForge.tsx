@@ -472,12 +472,21 @@ export function useModuleForge(): UseModuleForge {
         }
       }
 
+      // For AI-generated modules, the first slide's own illustration (if it
+      // has one) doubles as a ready-made thumbnail - no extra rendering needed.
+      const firstSlideImage = (() => {
+        const content = module.formattedOutput?.content as any;
+        const slidesArr = Array.isArray(content) ? content : content?.slides;
+        return Array.isArray(slidesArr) ? slidesArr[0]?.imageUrl || null : null;
+      })();
+
       const { data, error } = await supabase.from("modules").insert([{
         user_id: user.id,
         title: module.title,
         description: module.description,
         module_type: moduleType,
         slides: module.formattedOutput?.content || {},
+        thumbnail_url: firstSlideImage,
         forge_status: "submitted_to_sme",
         forge_inputs: module.forgeInputs as any,
         approved_prompt: module.approvedPrompt,
