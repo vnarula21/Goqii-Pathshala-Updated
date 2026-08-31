@@ -1,6 +1,6 @@
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
-import { callOpenAIImage, GeminiApiError } from "../_shared/gemini.ts";
+import { callHuggingFaceImage, GeminiApiError } from "../_shared/gemini.ts";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -65,14 +65,14 @@ serve(async (req) => {
       });
     }
 
-    const OPENAI_API_KEY = Deno.env.get("OPENAI_API_KEY");
-    if (!OPENAI_API_KEY) throw new Error("OPENAI_API_KEY is not configured");
+    const HF_API_TOKEN = Deno.env.get("HF_API_TOKEN");
+    if (!HF_API_TOKEN) throw new Error("HF_API_TOKEN is not configured");
 
     const fullPrompt = `Create a high-quality, professional illustration for a corporate learning module${context ? ` about "${context}"` : ""}. Requirements: clean polished style, vibrant but tasteful colors, NO text or labels in the image, no watermarks. The image should visually represent: ${prompt}`;
 
     let base64Data: string;
     try {
-      const image = await callOpenAIImage(OPENAI_API_KEY, fullPrompt);
+      const image = await callHuggingFaceImage(HF_API_TOKEN, fullPrompt);
       if (!image) {
         return new Response(JSON.stringify({ error: "No image returned by AI" }), {
           status: 500,

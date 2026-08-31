@@ -1,6 +1,6 @@
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
-import { callOpenAIImage } from "../_shared/gemini.ts";
+import { callHuggingFaceImage } from "../_shared/gemini.ts";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -12,7 +12,7 @@ const MAX_CONCURRENT = 2; // process 2 at a time to avoid rate limits
 async function generateOneImage(
   slide: { slide_number?: number; slideNumber?: number; title: string; imageSuggestion?: string },
   supabase: any,
-  OPENAI_API_KEY: string
+  HF_API_TOKEN: string
 ): Promise<{ slideNumber: number; imageUrl: string | null }> {
   const slideNumber = slide.slide_number || slide.slideNumber || 0;
   const imageSuggestion = slide.imageSuggestion;
@@ -26,7 +26,7 @@ async function generateOneImage(
     console.log(`[slide-${slideNumber}] Generating image...`);
     const fullPrompt = `Create a high-quality, professional illustration for a corporate training presentation slide about "${title}". Requirements: Photorealistic or polished vector style, vibrant colors, clean composition, NO text or labels in the image, no watermarks. The image should visually represent: ${imageSuggestion}`;
 
-    const base64Data = await callOpenAIImage(OPENAI_API_KEY, fullPrompt);
+    const base64Data = await callHuggingFaceImage(HF_API_TOKEN, fullPrompt);
     if (!base64Data) {
       console.warn(`[slide-${slideNumber}] No image data in response`);
       return { slideNumber, imageUrl: null };
@@ -111,9 +111,9 @@ serve(async (req) => {
       );
     }
 
-    const OPENAI_API_KEY = Deno.env.get("OPENAI_API_KEY");
-    if (!OPENAI_API_KEY) {
-      throw new Error("OPENAI_API_KEY is not configured");
+    const HF_API_TOKEN = Deno.env.get("HF_API_TOKEN");
+    if (!HF_API_TOKEN) {
+      throw new Error("HF_API_TOKEN is not configured");
     }
 
     const supabase = createClient(supabaseUrl, serviceRoleKey);
@@ -123,7 +123,7 @@ serve(async (req) => {
     for (let i = 0; i < slides.length; i += MAX_CONCURRENT) {
       const batch = slides.slice(i, i + MAX_CONCURRENT);
       const batchResults = await Promise.all(
-        batch.map(slide => generateOneImage(slide, supabase, OPENAI_API_KEY))
+        batch.map(slide => generateOneImage(slide, supabase, HF_API_TOKEN))
       );
       results.push(...batchResults);
       console.log(`Batch ${Math.floor(i / MAX_CONCURRENT) + 1} complete: ${results.filter(r => r.imageUrl).length} images so far`);

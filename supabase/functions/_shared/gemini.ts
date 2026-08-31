@@ -126,6 +126,81 @@ export class GeminiApiError extends Error {
   }
 }
 
+function bytesToBase64(bytes: Uint8Array): string {
+  // Encode in chunks - doing this in one shot via String.fromCharCode(...bytes)
+  // can blow the call stack for large images.
+  let binary = "";
+  const chunkSize = 8192;
+  for (let i = 0; i < bytes.length; i += chunkSize) {
+    binary += String.fromCharCode(...bytes.subarray(i, i + chunkSize));
+  }
+  return btoa(binary);
+}
+
+/** Generates an image using FLUX.1-schnell (open-source, Apache 2.0) via
+ * Hugging Face's Inference API - reuses the same HF_API_TOKEN already
+ * configured for AI4Bharat narration. No per-provider billing/quota like
+ * Gemini or OpenAI; Hugging Face's serverless inference can "cold start" a
+ * model (503 while it loads), so this retries a couple of times with a
+ * short wait when that happens. */
+export async function callHuggingFaceImage(hfToken: string, prompt: string): Promise<string | null> {
+  const url = "https://api-inference.huggingface.co/models/black-forest-labs/FLUX.1-schnell";
+  const maxAttempts = 3;
+
+  for (let attempt = 1; attempt <= maxAttempts; attempt++) {
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), 60_000);
+
+    let res: Response;
+    try {
+      res = await fetch(url, {
+        method: "POST",
+        headers: {
+          Authorization: `Bearer ${hfToken}`,
+          "Content-Type": "application/json",
+        },
+        signal: controller.signal,
+        body: JSON.stringify({ inputs: prompt }),
+      });
+    } catch (err) {
+      const aborted = err instanceof Error && err.name === "AbortError";
+      throw new GeminiApiError(
+        aborted ? "Hugging Face image generation timed out after 60 seconds." : `Hugging Face image request failed: ${err instanceof Error ? err.message : err}`,
+        502
+      );
+    } finally {
+      clearTimeout(timeout);
+    }
+
+    if (res.ok) {
+      const arrayBuffer = await res.arrayBuffer();
+      return bytesToBase64(new Uint8Array(arrayBuffer));
+    }
+
+    // Model is cold-starting - Hugging Face returns 503 with an estimated
+    // load time. Wait that long (capped) and retry, rather than failing.
+    if (res.status === 503 && attempt < maxAttempts) {
+      let waitSeconds = 15;
+      try {
+        const body = await res.json();
+        if (body?.estimated_time) waitSeconds = Math.min(Math.ceil(body.estimated_time) + 2, 30);
+      } catch {
+        // ignore, use default wait
+      }
+      await new Promise((resolve) => setTimeout(resolve, waitSeconds * 1000));
+      continue;
+    }
+
+    const errText = await res.text();
+    if (res.status === 429) {
+      throw new GeminiApiError("Hugging Face rate limit exceeded, please try again in a moment.", 429);
+    }
+    throw new GeminiApiError(`Hugging Face image API error [${res.status}]: ${errText.slice(0, 300)}`, res.status);
+  }
+
+  return null;
+}
+
 /** Generates an image using OpenAI's DALL-E 3, returning base64-encoded
  * image data (no data: prefix), or null if none came back. Used instead of
  * Gemini for images specifically, since Gemini's free-tier image quota is
