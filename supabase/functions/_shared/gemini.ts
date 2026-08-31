@@ -80,17 +80,32 @@ export async function callGeminiText(apiKey: string, options: GeminiTextOptions)
 /** Calls Gemini's image-capable model and returns a base64-encoded image
  * (no data: prefix), or null if no image came back. */
 export async function callGeminiImage(apiKey: string, prompt: string): Promise<string | null> {
-  const res = await fetch(
-    `https://generativelanguage.googleapis.com/v1beta/models/${GEMINI_IMAGE_MODEL}:generateContent?key=${apiKey}`,
-    {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        contents: [{ role: "user", parts: [{ text: prompt }] }],
-        generationConfig: { responseModalities: ["IMAGE"] },
-      }),
-    }
-  );
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), 45_000);
+
+  let res: Response;
+  try {
+    res = await fetch(
+      `https://generativelanguage.googleapis.com/v1beta/models/${GEMINI_IMAGE_MODEL}:generateContent?key=${apiKey}`,
+      {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        signal: controller.signal,
+        body: JSON.stringify({
+          contents: [{ role: "user", parts: [{ text: prompt }] }],
+          generationConfig: { responseModalities: ["TEXT", "IMAGE"] },
+        }),
+      }
+    );
+  } catch (err) {
+    const aborted = err instanceof Error && err.name === "AbortError";
+    throw new GeminiApiError(
+      aborted ? "Gemini image generation timed out after 45 seconds." : `Gemini image request failed: ${err instanceof Error ? err.message : err}`,
+      502
+    );
+  } finally {
+    clearTimeout(timeout);
+  }
 
   if (!res.ok) {
     const errText = await res.text();
