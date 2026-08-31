@@ -17,6 +17,11 @@ export interface GeminiTextOptions {
    * return JSON matching this shape instead of free-form text. */
   jsonSchema?: Record<string, unknown>;
   temperature?: number;
+  /** Defaults to 16384 - generous enough for a full multi-slide presentation
+   * or document. Without an explicit limit, Gemini's own default can be too
+   * small for large structured JSON output, silently truncating the
+   * response mid-way (e.g. later slides in a deck coming out blank). */
+  maxOutputTokens?: number;
 }
 
 /** Calls Gemini for a text (optionally structured-JSON) response. Returns
@@ -30,15 +35,15 @@ export async function callGeminiText(apiKey: string, options: GeminiTextOptions)
     body.systemInstruction = { parts: [{ text: options.systemPrompt }] };
   }
 
-  const generationConfig: Record<string, unknown> = {};
+  const generationConfig: Record<string, unknown> = {
+    maxOutputTokens: options.maxOutputTokens ?? 16384,
+  };
   if (options.temperature != null) generationConfig.temperature = options.temperature;
   if (options.jsonSchema) {
     generationConfig.responseMimeType = "application/json";
     generationConfig.responseSchema = options.jsonSchema;
   }
-  if (Object.keys(generationConfig).length > 0) {
-    body.generationConfig = generationConfig;
-  }
+  body.generationConfig = generationConfig;
 
   const res = await fetch(
     `https://generativelanguage.googleapis.com/v1beta/models/${GEMINI_MODEL}:generateContent?key=${apiKey}`,
@@ -58,7 +63,14 @@ export async function callGeminiText(apiKey: string, options: GeminiTextOptions)
   }
 
   const data = await res.json();
-  const text = data.candidates?.[0]?.content?.parts?.[0]?.text;
+  const candidate = data.candidates?.[0];
+  const text = candidate?.content?.parts?.[0]?.text;
+
+  if (candidate?.finishReason === "MAX_TOKENS") {
+    throw new Error(
+      "Gemini's response was cut off because it ran out of output space (increase maxOutputTokens, or ask for fewer/shorter items)."
+    );
+  }
   if (!text) {
     throw new Error("No content returned from Gemini");
   }
