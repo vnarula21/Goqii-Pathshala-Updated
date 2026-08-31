@@ -125,3 +125,53 @@ export class GeminiApiError extends Error {
     this.status = status;
   }
 }
+
+/** Generates an image using OpenAI's DALL-E 3, returning base64-encoded
+ * image data (no data: prefix), or null if none came back. Used instead of
+ * Gemini for images specifically, since Gemini's free-tier image quota is
+ * much stricter than its text quota and was getting rate-limited (429)
+ * during normal use. Reuses the same OPENAI_API_KEY already configured for
+ * text-to-speech narration - OpenAI uses one API key across all its services. */
+export async function callOpenAIImage(apiKey: string, prompt: string): Promise<string | null> {
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), 60_000);
+
+  let res: Response;
+  try {
+    res = await fetch("https://api.openai.com/v1/images/generations", {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${apiKey}`,
+        "Content-Type": "application/json",
+      },
+      signal: controller.signal,
+      body: JSON.stringify({
+        model: "dall-e-3",
+        prompt,
+        n: 1,
+        size: "1024x1024",
+        quality: "standard",
+        response_format: "b64_json",
+      }),
+    });
+  } catch (err) {
+    const aborted = err instanceof Error && err.name === "AbortError";
+    throw new GeminiApiError(
+      aborted ? "OpenAI image generation timed out after 60 seconds." : `OpenAI image request failed: ${err instanceof Error ? err.message : err}`,
+      502
+    );
+  } finally {
+    clearTimeout(timeout);
+  }
+
+  if (!res.ok) {
+    const errText = await res.text();
+    if (res.status === 429) {
+      throw new GeminiApiError("OpenAI rate limit exceeded, please try again in a moment.", 429);
+    }
+    throw new GeminiApiError(`OpenAI image API error [${res.status}]: ${errText.slice(0, 300)}`, res.status);
+  }
+
+  const data = await res.json();
+  return data.data?.[0]?.b64_json || null;
+}
