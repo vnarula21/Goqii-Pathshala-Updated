@@ -1,5 +1,6 @@
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
+import { callGeminiText, GeminiApiError } from "../_shared/gemini.ts";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -65,9 +66,9 @@ serve(async (req) => {
       );
     }
 
-    const LOVABLE_API_KEY = Deno.env.get("LOVABLE_API_KEY");
-    if (!LOVABLE_API_KEY) {
-      throw new Error("LOVABLE_API_KEY is not configured");
+    const GEMINI_API_KEY = Deno.env.get("GEMINI_API_KEY");
+    if (!GEMINI_API_KEY) {
+      throw new Error("GEMINI_API_KEY is not configured");
     }
 
     const slideCount = numberOfSlides || 10;
@@ -157,49 +158,27 @@ CRITICAL CONTENT RULE:
       },
     ];
 
-    console.log("Generating interactive PPT with tool calling, slides:", slideCount);
+    console.log("Generating interactive PPT with structured output, slides:", slideCount);
 
-    const response = await fetch("https://ai.gateway.lovable.dev/v1/chat/completions", {
-      method: "POST",
-      headers: {
-        Authorization: `Bearer ${LOVABLE_API_KEY}`,
-        "Content-Type": "application/json",
-      },
-      body: JSON.stringify({
-        model: "google/gemini-3-flash-preview",
-        messages: [
-          { role: "system", content: systemPrompt },
-          { role: "user", content: userPrompt },
-        ],
-        tools,
-        tool_choice: { type: "function", function: { name: "create_presentation" } },
-      }),
-    });
-
-    if (!response.ok) {
-      const errorText = await response.text();
-      console.error("AI gateway error:", response.status, errorText);
-
-      if (response.status === 429) {
+    let content: any;
+    try {
+      const rawJson = await callGeminiText(GEMINI_API_KEY, {
+        systemPrompt,
+        userPrompt,
+        jsonSchema: tools[0].function.parameters,
+      });
+      content = JSON.parse(rawJson);
+    } catch (err) {
+      if (err instanceof GeminiApiError) {
         return new Response(
-          JSON.stringify({ error: "Rate limits exceeded, please try again later." }),
-          { status: 429, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+          JSON.stringify({ error: err.message }),
+          { status: err.status, headers: { ...corsHeaders, "Content-Type": "application/json" } }
         );
       }
-
-      throw new Error(`AI gateway error: ${response.status}`);
-    }
-
-    const data = await response.json();
-
-    // Extract structured output from tool call
-    const toolCall = data.choices?.[0]?.message?.tool_calls?.[0];
-    if (!toolCall?.function?.arguments) {
-      console.error("No tool call in response:", JSON.stringify(data.choices?.[0]?.message));
+      console.error("Failed to get/parse structured output:", err);
       throw new Error("AI did not return structured slide data");
     }
 
-    const content = JSON.parse(toolCall.function.arguments);
     if (!content?.slides?.length) {
       throw new Error("AI response missing slides data");
     }

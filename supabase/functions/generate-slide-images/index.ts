@@ -1,18 +1,18 @@
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
+import { callGeminiImage } from "../_shared/gemini.ts";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
   "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",
 };
 
-const PER_IMAGE_TIMEOUT_MS = 45_000; // 45s per image
 const MAX_CONCURRENT = 2; // process 2 at a time to avoid rate limits
 
 async function generateOneImage(
   slide: { slide_number?: number; slideNumber?: number; title: string; imageSuggestion?: string },
   supabase: any,
-  LOVABLE_API_KEY: string
+  GEMINI_API_KEY: string
 ): Promise<{ slideNumber: number; imageUrl: string | null }> {
   const slideNumber = slide.slide_number || slide.slideNumber || 0;
   const imageSuggestion = slide.imageSuggestion;
@@ -22,43 +22,16 @@ async function generateOneImage(
     return { slideNumber, imageUrl: null };
   }
 
-  const controller = new AbortController();
-  const timeout = setTimeout(() => controller.abort(), PER_IMAGE_TIMEOUT_MS);
-
   try {
     console.log(`[slide-${slideNumber}] Generating image...`);
-    const imageResponse = await fetch("https://ai.gateway.lovable.dev/v1/chat/completions", {
-      method: "POST",
-      headers: {
-        Authorization: `Bearer ${LOVABLE_API_KEY}`,
-        "Content-Type": "application/json",
-      },
-      body: JSON.stringify({
-        model: "google/gemini-3-pro-image-preview",
-        messages: [{
-          role: "user",
-          content: `Create a high-quality, professional illustration for a corporate training presentation slide about "${title}". Requirements: Photorealistic or polished vector style, vibrant colors, clean composition, NO text or labels in the image, no watermarks. The image should visually represent: ${imageSuggestion}`
-        }],
-        modalities: ["image", "text"]
-      }),
-      signal: controller.signal,
-    });
+    const fullPrompt = `Create a high-quality, professional illustration for a corporate training presentation slide about "${title}". Requirements: Photorealistic or polished vector style, vibrant colors, clean composition, NO text or labels in the image, no watermarks. The image should visually represent: ${imageSuggestion}`;
 
-    clearTimeout(timeout);
-
-    if (!imageResponse.ok) {
-      console.error(`[slide-${slideNumber}] AI API error: ${imageResponse.status}`);
-      return { slideNumber, imageUrl: null };
-    }
-
-    const imageData = await imageResponse.json();
-    const base64Image = imageData.choices?.[0]?.message?.images?.[0]?.image_url?.url;
-    if (!base64Image) {
+    const base64Data = await callGeminiImage(GEMINI_API_KEY, fullPrompt);
+    if (!base64Data) {
       console.warn(`[slide-${slideNumber}] No image data in response`);
       return { slideNumber, imageUrl: null };
     }
 
-    const base64Data = base64Image.replace(/^data:image\/\w+;base64,/, '');
     const imageBytes = Uint8Array.from(atob(base64Data), c => c.charCodeAt(0));
     const fileName = `forge-interactive-ppt/${Date.now()}-slide-${slideNumber}.png`;
 
@@ -75,12 +48,7 @@ async function generateOneImage(
     console.log(`[slide-${slideNumber}] Image uploaded successfully`);
     return { slideNumber, imageUrl: urlData.publicUrl };
   } catch (err) {
-    clearTimeout(timeout);
-    if (err instanceof DOMException && err.name === 'AbortError') {
-      console.error(`[slide-${slideNumber}] Timed out after ${PER_IMAGE_TIMEOUT_MS}ms`);
-    } else {
-      console.error(`[slide-${slideNumber}] Error:`, err);
-    }
+    console.error(`[slide-${slideNumber}] Error:`, err);
     return { slideNumber, imageUrl: null };
   }
 }
@@ -143,9 +111,9 @@ serve(async (req) => {
       );
     }
 
-    const LOVABLE_API_KEY = Deno.env.get("LOVABLE_API_KEY");
-    if (!LOVABLE_API_KEY) {
-      throw new Error("LOVABLE_API_KEY is not configured");
+    const GEMINI_API_KEY = Deno.env.get("GEMINI_API_KEY");
+    if (!GEMINI_API_KEY) {
+      throw new Error("GEMINI_API_KEY is not configured");
     }
 
     const supabase = createClient(supabaseUrl, serviceRoleKey);
@@ -155,7 +123,7 @@ serve(async (req) => {
     for (let i = 0; i < slides.length; i += MAX_CONCURRENT) {
       const batch = slides.slice(i, i + MAX_CONCURRENT);
       const batchResults = await Promise.all(
-        batch.map(slide => generateOneImage(slide, supabase, LOVABLE_API_KEY))
+        batch.map(slide => generateOneImage(slide, supabase, GEMINI_API_KEY))
       );
       results.push(...batchResults);
       console.log(`Batch ${Math.floor(i / MAX_CONCURRENT) + 1} complete: ${results.filter(r => r.imageUrl).length} images so far`);
