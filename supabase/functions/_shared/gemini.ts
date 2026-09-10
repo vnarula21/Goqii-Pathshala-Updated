@@ -126,6 +126,27 @@ export class GeminiApiError extends Error {
   }
 }
 
+/** Looks up an API key the same way the existing narration feature does:
+ * check the api_key_vault table first (where keys entered via the admin
+ * Settings UI are stored), then fall back to a raw Supabase secret of the
+ * same name. Without this, a key that's only in the vault (not also set as
+ * a plain secret) would incorrectly look "missing" to any function that
+ * only checked Deno.env.get() directly. */
+export async function getVaultApiKey(
+  adminClient: any,
+  provider: string,
+  envFallback: string
+): Promise<string | null> {
+  const { data } = await adminClient
+    .from("api_key_vault")
+    .select("api_key_encrypted")
+    .eq("provider", provider)
+    .maybeSingle();
+
+  if (data?.api_key_encrypted) return data.api_key_encrypted;
+  return Deno.env.get(envFallback) || null;
+}
+
 function bytesToBase64(bytes: Uint8Array): string {
   // Encode in chunks - doing this in one shot via String.fromCharCode(...bytes)
   // can blow the call stack for large images.

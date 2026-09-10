@@ -1,6 +1,6 @@
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
-import { callHuggingFaceImage, GeminiApiError } from "../_shared/gemini.ts";
+import { callHuggingFaceImage, GeminiApiError, getVaultApiKey } from "../_shared/gemini.ts";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -65,8 +65,8 @@ serve(async (req) => {
       });
     }
 
-    const HF_API_TOKEN = Deno.env.get("HF_API_TOKEN");
-    if (!HF_API_TOKEN) throw new Error("HF_API_TOKEN is not configured");
+    const HF_API_TOKEN = await getVaultApiKey(adminClient, "ai4bharat", "HF_API_TOKEN");
+    if (!HF_API_TOKEN) throw new Error("Hugging Face token (HF_API_TOKEN) is not configured. Set it in Settings or as a Supabase secret.");
 
     const fullPrompt = `Create a high-quality, professional illustration for a corporate learning module${context ? ` about "${context}"` : ""}. Requirements: clean polished style, vibrant but tasteful colors, NO text or labels in the image, no watermarks. The image should visually represent: ${prompt}`;
 

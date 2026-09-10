@@ -1,6 +1,6 @@
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
-import { callHuggingFaceImage } from "../_shared/gemini.ts";
+import { callHuggingFaceImage, getVaultApiKey } from "../_shared/gemini.ts";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -111,9 +111,9 @@ serve(async (req) => {
       );
     }
 
-    const HF_API_TOKEN = Deno.env.get("HF_API_TOKEN");
+    const HF_API_TOKEN = await getVaultApiKey(adminClient, "ai4bharat", "HF_API_TOKEN");
     if (!HF_API_TOKEN) {
-      throw new Error("HF_API_TOKEN is not configured");
+      throw new Error("Hugging Face token (HF_API_TOKEN) is not configured. Set it in Settings or as a Supabase secret.");
     }
 
     const supabase = createClient(supabaseUrl, serviceRoleKey);

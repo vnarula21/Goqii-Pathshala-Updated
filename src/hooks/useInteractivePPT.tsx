@@ -107,12 +107,22 @@ export function useInteractivePPT() {
     if (slidesNeedingImages.length === 0) return slides;
 
     setImageProgress({ total: slidesNeedingImages.length, completed: 0, isGenerating: true });
+    const waitToast = toast.info(`Generating ${slidesNeedingImages.length} image(s)… this can take a minute or two, please wait.`, { duration: 120000 });
 
     try {
       const { data, error } = await supabase.functions.invoke("generate-slide-images", {
         body: { slides: slidesNeedingImages },
       });
-      if (error) throw error;
+      if (error) {
+        let realMessage = error.message;
+        try {
+          const body = await error.context?.json?.();
+          if (body?.error) realMessage = body.error;
+        } catch {
+          // response wasn't JSON or already consumed - fall back to error.message
+        }
+        throw new Error(realMessage);
+      }
       if (data.error) throw new Error(data.error);
 
       const imageResults: { slideNumber: number; imageUrl: string | null }[] = data.images || [];
@@ -131,11 +141,13 @@ export function useInteractivePPT() {
         toast.warning("Image generation completed but no images were produced");
       }
       return updatedSlides;
-    } catch (err) {
+    } catch (err: any) {
       console.error("Error generating slide images:", err);
       setImageProgress(prev => ({ ...prev, isGenerating: false }));
-      toast.error("Image generation failed, but your slides are ready");
+      toast.error(err?.message || "Image generation failed, but your slides are ready");
       return slides;
+    } finally {
+      toast.dismiss(waitToast);
     }
   }, []);
 

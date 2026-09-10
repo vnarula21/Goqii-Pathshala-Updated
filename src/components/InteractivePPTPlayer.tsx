@@ -251,7 +251,10 @@ export default function InteractivePPTPlayer({ module, savedModuleId, onModuleCo
 
       {/* Slide Display */}
       <Card className={`bg-gradient-to-br from-slate-50 to-slate-100 dark:from-slate-900 dark:to-slate-800 overflow-hidden ${isFullscreen ? "flex-1" : ""}`}>
-        <CardContent className={`p-6 flex flex-col ${isFullscreen ? "h-full" : "min-h-[400px]"}`}>
+        <CardContent
+          className={`p-6 flex flex-col ${isFullscreen ? "h-full" : ""}`}
+          style={isFullscreen ? undefined : { aspectRatio: "16 / 9", maxHeight: "70vh" }}
+        >
           <SlideRenderer slide={slide} currentSlide={currentSlide} isFullscreen={isFullscreen} />
         </CardContent>
       </Card>

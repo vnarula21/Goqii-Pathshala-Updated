@@ -83,19 +83,33 @@ export default function EditableImage({
       return;
     }
     setIsGenerating(true);
+    const waitToast = toast.info("Generating image… this can take up to a minute, please wait.", { duration: 60000 });
     try {
       const { data, error } = await supabase.functions.invoke("generate-single-image", {
         body: { prompt, context: contextLabel },
       });
-      if (error) throw error;
+      if (error) {
+        // supabase-js doesn't auto-parse the response body into error.message -
+        // it just says "non-2xx status code". Read the real message ourselves.
+        let realMessage = error.message;
+        try {
+          const body = await error.context?.json?.();
+          if (body?.error) realMessage = body.error;
+        } catch {
+          // response wasn't JSON or already consumed - fall back to error.message
+        }
+        throw new Error(realMessage);
+      }
+      if (data?.error) throw new Error(data.error);
       if (!data?.imageUrl) throw new Error("No image URL returned");
       onImageChange(data.imageUrl);
       setShowPromptEditor(false);
       toast.success("Image generated");
     } catch (err: any) {
       console.error("AI image gen failed:", err);
-      toast.error(err?.message || "Failed to generate image");
+      toast.error(err?.message || "Failed to generate image. Please try again in a moment.");
     } finally {
+      toast.dismiss(waitToast);
       setIsGenerating(false);
     }
   };
