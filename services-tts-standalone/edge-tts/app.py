@@ -22,6 +22,7 @@ import re
 import subprocess
 import tempfile
 import threading
+import time
 import urllib.error
 import urllib.request
 
@@ -75,6 +76,25 @@ async def synth_mp3(text: str, voice: str, rate: str) -> bytes:
     return bytes(buf)
 
 
+async def synth_mp3_with_retry(text: str, voice: str, rate: str, max_attempts: int = 3) -> bytes:
+    """Microsoft's edge-tts is an unofficial, reverse-engineered service (not a
+    real public API) - it commonly drops or rejects requests when called
+    rapidly back-to-back, which is exactly what happens generating narration
+    for every slide in a deck one after another. Without retrying, this
+    showed up as slide 1 succeeding (first call, connection fresh) and every
+    slide after it silently failing. Retry with a short backoff before
+    giving up on a slide."""
+    last_error: Exception | None = None
+    for attempt in range(1, max_attempts + 1):
+        try:
+            return await synth_mp3(text, voice, rate)
+        except Exception as e:
+            last_error = e
+            if attempt < max_attempts:
+                await asyncio.sleep(1.5 * attempt)
+    raise last_error if last_error else RuntimeError("edge-tts failed with no error captured")
+
+
 def mp3_to_wav(mp3: bytes) -> bytes:
     """Transcode to WAV so callers expecting audio/wav stay unchanged.
 
@@ -110,7 +130,7 @@ def generate_voice(req: VoiceRequest, x_api_key: str = Header(default="")):
     voice = pick_voice(req)
     rate = STYLE_RATE.get(req.style, "-5%")
     try:
-        mp3 = asyncio.run(synth_mp3(req.text, voice, rate))
+        mp3 = asyncio.run(synth_mp3_with_retry(req.text, voice, rate))
         wav = mp3_to_wav(mp3)
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"TTS failed: {e}")
@@ -504,11 +524,17 @@ def _build_module(req: BuildModuleRequest) -> None:
                 if not nar:
                     scenes.append(Scene(imageUrl=image_urls[i], audioUrl=None, duration=5))
                     continue
+                if i > 0:
+                    # Small proactive gap between slides - Microsoft's edge-tts
+                    # service (unofficial, reverse-engineered) is much more
+                    # likely to drop/reject calls fired back-to-back with no
+                    # gap between them.
+                    time.sleep(0.75)
                 try:
-                    mp3 = asyncio.run(synth_mp3(nar[:4000], voice, rate))
+                    mp3 = asyncio.run(synth_mp3_with_retry(nar[:4000], voice, rate))
                     wav = mp3_to_wav(mp3)
                 except Exception as e:
-                    print(f"tts failed slide {i + 1}:", e)
+                    print(f"tts failed slide {i + 1} after retries:", e)
                     scenes.append(Scene(imageUrl=image_urls[i], audioUrl=None, duration=5))
                     continue
                 au = _sb_upload(sb, key, req.bucket,
