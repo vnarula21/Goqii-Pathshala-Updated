@@ -57,6 +57,22 @@ export default function NarratedSlideshow({ moduleId, title, onModuleComplete }:
     }
   };
 
+  const { data: job } = useQuery({
+    queryKey: ["slideshow-job", moduleId],
+    queryFn: async () => {
+      const { data } = await supabase
+        .from("video_generation_jobs")
+        .select("status,progress,current_step")
+        .eq("module_id", moduleId)
+        .order("created_at", { ascending: false })
+        .limit(1);
+      return (data && data[0]) || null;
+    },
+    refetchInterval: (q) => (q.state.data?.status === "processing" ? 5000 : false),
+  });
+
+  const stillBuilding = job?.status === "processing";
+
   const { data: slides = [] } = useQuery({
     queryKey: ["slideshow-assets", moduleId],
     queryFn: async (): Promise<Slide[]> => {
@@ -77,28 +93,23 @@ export default function NarratedSlideshow({ moduleId, title, onModuleComplete }:
       (auds || []).forEach((a: any) => { if (a.audio_url) bySlide.set(a.slide_number, a.audio_url); });
       return images.map((img, i) => ({ image: img, audio: bySlide.get(i + 1) || null }));
     },
+    // Keep refreshing while narration is still being generated (audio gets
+    // added slide-by-slide after images already exist), not just until
+    // images show up - otherwise we'd stop polling before audio is complete.
     refetchInterval: (q) => {
-      const d = q.state.data as Slide[] | undefined;
-      return d && d.length > 0 ? false : 4000;
+      const current = q.state.data as Slide[] | undefined;
+      const noSlidesYet = !current || current.length === 0;
+      return (stillBuilding || noSlidesYet) ? 4000 : false;
     },
   });
 
-  const ready = slides.length > 0;
-
-  const { data: job } = useQuery({
-    queryKey: ["slideshow-job", moduleId],
-    queryFn: async () => {
-      const { data } = await supabase
-        .from("video_generation_jobs")
-        .select("status,progress,current_step")
-        .eq("module_id", moduleId)
-        .order("created_at", { ascending: false })
-        .limit(1);
-      return (data && data[0]) || null;
-    },
-    enabled: !ready,
-    refetchInterval: ready ? false : 5000,
-  });
+  // Don't reveal the slideshow just because slide images exist - narration
+  // audio is generated slide-by-slide in the background after that, and
+  // showing slides before it's done let people scroll ahead thinking
+  // everything was ready when most slides still had no narration. Wait for
+  // the whole job to finish (or, for older modules with no job row at all,
+  // fall back to images existing).
+  const ready = slides.length > 0 && !stillBuilding;
 
   const clearSilent = () => {
     if (silentTimer.current) { clearTimeout(silentTimer.current); silentTimer.current = null; }
@@ -248,7 +259,7 @@ export default function NarratedSlideshow({ moduleId, title, onModuleComplete }:
   }
 
   // ── Building: progress ─────────────────────────────────────────────────
-  if (job && job.status === "processing") {
+  if (!ready) {
     return (
       <Card>
         <CardContent className="pt-6">
@@ -256,10 +267,10 @@ export default function NarratedSlideshow({ moduleId, title, onModuleComplete }:
             <Loader2 className="h-5 w-5 animate-spin text-primary" />
             <div>
               <p className="font-medium">Building your narrated slideshow…</p>
-              <p className="text-sm text-muted-foreground">{job.current_step || "Working…"}</p>
+              <p className="text-sm text-muted-foreground">{job?.current_step || "Preparing your slides and narration…"}</p>
             </div>
           </div>
-          <Progress value={job.progress || 0} className="h-2" />
+          <Progress value={job?.progress || 0} className="h-2" />
           <p className="text-xs text-muted-foreground mt-2">
             This runs on a free server and can take a few minutes. You can leave and come back.
           </p>
