@@ -441,6 +441,8 @@ def _gemini_narrate(api_key: str, deck_title: str, slide_texts: list[str]) -> li
 
 def _build_module(req: BuildModuleRequest) -> None:
     sb, key = req.supabaseUrl.rstrip("/"), req.supabaseServiceKey
+    print(f"[{req.moduleId}] Background job started. speakerNotes provided: "
+          f"{len(req.speakerNotes or [])} entries. geminiApiKey provided: {bool(req.geminiApiKey)}.")
 
     def jobset(**fields):
         try:
@@ -492,6 +494,8 @@ def _build_module(req: BuildModuleRequest) -> None:
                 sidx = nt.get("slideNumber") or i + 1
                 if nt.get("text"):
                     notes_by[sidx] = nt["text"]
+            print(f"[{req.moduleId}] Received {len(req.speakerNotes or [])} speaker note entries, "
+                  f"{len(notes_by)} usable after filtering, for {n} slides.")
             narrations = [""] * n
             need: list[int] = []
             for i in range(n):
@@ -500,17 +504,27 @@ def _build_module(req: BuildModuleRequest) -> None:
                     narrations[i] = _sanitize(note)
                 else:
                     need.append(i)
+            print(f"[{req.moduleId}] {n - len(need)} slides used speaker notes directly; "
+                  f"{len(need)} slides need a fallback (Gemini or raw slide text): {need}")
             if need:
                 gen: list[str] = []
                 if req.geminiApiKey:
+                    print(f"[{req.moduleId}] geminiApiKey present, attempting Gemini narration for {len(need)} slides.")
                     jobset(progress=25, current_step="Writing narration script...")
                     try:
                         gen = _gemini_narrate(req.geminiApiKey, req.deckTitle, [_sanitize(texts[i]) for i in need])
+                        print(f"[{req.moduleId}] Gemini narration returned {len(gen)} results.")
                     except Exception as e:
-                        print("gemini failed:", e)
+                        print(f"[{req.moduleId}] gemini failed:", e)
                         gen = []
+                else:
+                    print(f"[{req.moduleId}] No geminiApiKey provided - falling back to raw slide text for {len(need)} slides.")
                 for k, idx in enumerate(need):
                     narrations[idx] = (gen[k] if k < len(gen) and gen[k] else _sanitize(texts[idx])).strip()
+
+            empty_count = sum(1 for x in narrations if not x)
+            print(f"[{req.moduleId}] Final narration text ready for {n - empty_count}/{n} slides "
+                  f"({empty_count} still empty - these will have no audio).")
 
             jobset(progress=30, current_step="Generating narration...")
             voice = pick_voice(VoiceRequest(text="x", language=req.narrationLanguage,
@@ -522,6 +536,7 @@ def _build_module(req: BuildModuleRequest) -> None:
                 jobset(progress=30 + int((i / max(n, 1)) * 50), scene_completed=i,
                        current_step=f"Narrating slide {i + 1} of {n}...")
                 if not nar:
+                    print(f"[{req.moduleId}] Slide {i + 1}: no narration text at all - skipping audio.")
                     scenes.append(Scene(imageUrl=image_urls[i], audioUrl=None, duration=5))
                     continue
                 if i > 0:
@@ -534,7 +549,7 @@ def _build_module(req: BuildModuleRequest) -> None:
                     mp3 = asyncio.run(synth_mp3_with_retry(nar[:4000], voice, rate))
                     wav = mp3_to_wav(mp3)
                 except Exception as e:
-                    print(f"tts failed slide {i + 1} after retries:", e)
+                    print(f"[{req.moduleId}] tts failed slide {i + 1} after retries:", e)
                     scenes.append(Scene(imageUrl=image_urls[i], audioUrl=None, duration=5))
                     continue
                 au = _sb_upload(sb, key, req.bucket,
@@ -543,6 +558,7 @@ def _build_module(req: BuildModuleRequest) -> None:
                            {"module_id": req.moduleId, "slide_number": i + 1, "narration_text": nar,
                             "audio_url": au, "audio_duration": max(4, len(nar) // 15),
                             "audio_status": "completed", "voice_id": "edge-tts"})
+                print(f"[{req.moduleId}] Slide {i + 1}: narration audio generated and saved successfully.")
                 scenes.append(Scene(imageUrl=image_urls[i], audioUrl=au, duration=max(4, len(nar) // 15)))
 
             jobset(progress=85, scene_completed=n, current_step="Stitching final video...")
@@ -554,7 +570,7 @@ def _build_module(req: BuildModuleRequest) -> None:
                        {"module_id": req.moduleId, "format_type": "video",
                         "content": {"url": vurl}, "status": "completed", "video_url": vurl})
     except Exception as e:
-        print("build_module failed:", e)
+        print(f"[{req.moduleId}] build_module failed:", e)
         jobset(status="failed", error_message=str(e)[:480])
 
 

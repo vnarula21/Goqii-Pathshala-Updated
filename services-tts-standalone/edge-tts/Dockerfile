@@ -1,5 +1,11 @@
 FROM python:3.11-slim
 
+# Force unbuffered stdout/stderr - without this, print() statements can sit
+# in an internal buffer and never actually appear in Render's log viewer
+# (especially from background threads), making it impossible to diagnose
+# failures even though the code is genuinely running and printing.
+ENV PYTHONUNBUFFERED=1
+
 # ffmpeg        = mp3 -> wav transcode + video stitching
 # libreoffice   = pptx -> pdf (headless, free; replaces CloudConvert)
 # poppler-utils = pdftoppm: pdf -> per-slide PNG
