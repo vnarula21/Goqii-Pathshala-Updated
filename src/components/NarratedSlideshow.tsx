@@ -57,49 +57,60 @@ export default function NarratedSlideshow({ moduleId, title, onModuleComplete }:
     }
   };
 
-  const { data: job } = useQuery({
+  const { data: job, isLoading: jobLoading, isError: jobErrored } = useQuery({
     queryKey: ["slideshow-job", moduleId],
     queryFn: async () => {
-      const { data } = await supabase
+      const { data, error } = await supabase
         .from("video_generation_jobs")
         .select("status,progress,current_step")
         .eq("module_id", moduleId)
         .order("created_at", { ascending: false })
         .limit(1);
+      if (error) throw error;
       return (data && data[0]) || null;
     },
-    refetchInterval: (q) => (q.state.data?.status === "processing" ? 5000 : false),
+    refetchInterval: (q) => (q.state.data?.status === "processing" || q.state.status === "error" ? 5000 : false),
+    retry: 3,
   });
 
-  const stillBuilding = job?.status === "processing";
+  // Fail-safe: if we don't yet KNOW the job is done (still loading, the
+  // query errored, or it's genuinely processing), treat it as still
+  // building rather than assuming "done" - otherwise a transient fetch
+  // failure would prematurely reveal the slideshow before narration
+  // audio has actually finished loading in, exactly like when it was
+  // simply skipping this check entirely.
+  const stillBuilding = jobLoading || jobErrored || job?.status === "processing";
 
-  const { data: slides = [] } = useQuery({
+  const { data: slides = [], isError: slidesErrored } = useQuery({
     queryKey: ["slideshow-assets", moduleId],
     queryFn: async (): Promise<Slide[]> => {
-      const { data: imgOut } = await supabase
+      const { data: imgOut, error: imgError } = await supabase
         .from("module_outputs")
         .select("content")
         .eq("module_id", moduleId)
         .eq("format_type", "slide_images")
         .maybeSingle();
+      if (imgError) throw imgError;
       const images: string[] = ((imgOut?.content as any)?.images) || [];
       if (!images.length) return [];
-      const { data: auds } = await supabase
+      const { data: auds, error: audsError } = await supabase
         .from("module_slide_audio")
         .select("slide_number,audio_url")
         .eq("module_id", moduleId)
         .order("slide_number", { ascending: true });
+      if (audsError) throw audsError;
       const bySlide = new Map<number, string>();
       (auds || []).forEach((a: any) => { if (a.audio_url) bySlide.set(a.slide_number, a.audio_url); });
       return images.map((img, i) => ({ image: img, audio: bySlide.get(i + 1) || null }));
     },
+    retry: 3,
     // Keep refreshing while narration is still being generated (audio gets
     // added slide-by-slide after images already exist), not just until
     // images show up - otherwise we'd stop polling before audio is complete.
     refetchInterval: (q) => {
       const current = q.state.data as Slide[] | undefined;
       const noSlidesYet = !current || current.length === 0;
-      return (stillBuilding || noSlidesYet) ? 4000 : false;
+      return (stillBuilding || noSlidesYet || q.state.status === "error") ? 4000 : false;
     },
   });
 
@@ -109,7 +120,7 @@ export default function NarratedSlideshow({ moduleId, title, onModuleComplete }:
   // everything was ready when most slides still had no narration. Wait for
   // the whole job to finish (or, for older modules with no job row at all,
   // fall back to images existing).
-  const ready = slides.length > 0 && !stillBuilding;
+  const ready = slides.length > 0 && !stillBuilding && !slidesErrored;
 
   const clearSilent = () => {
     if (silentTimer.current) { clearTimeout(silentTimer.current); silentTimer.current = null; }
