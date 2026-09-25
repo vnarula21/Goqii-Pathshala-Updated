@@ -234,6 +234,7 @@ export default function ModuleRouter({
             <NarratedSlideshow
               moduleId={savedModuleId}
               title={module.title}
+              approvalStatus={module.approval_status}
               onModuleComplete={handleContentComplete}
             />
           ) : (

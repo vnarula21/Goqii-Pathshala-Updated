@@ -18,6 +18,11 @@ interface Slide {
 interface NarratedSlideshowProps {
   moduleId: string;
   title?: string;
+  /** When the module is already approved, its narration is guaranteed to be
+   * fully built - skip the whole "is it still building?" check/poll and load
+   * the saved slides directly, so an approved module always opens instantly
+   * instead of re-verifying build status on every single open. */
+  approvalStatus?: string;
   onModuleComplete?: () => void;
 }
 
@@ -29,8 +34,9 @@ const SILENT_MS = 6000;
  * clip ends. One Play press runs the whole deck. Playback is driven imperatively
  * off the <audio> "ended" event so the chain never stalls between slides.
  */
-export default function NarratedSlideshow({ moduleId, title, onModuleComplete }: NarratedSlideshowProps) {
+export default function NarratedSlideshow({ moduleId, title, approvalStatus, onModuleComplete }: NarratedSlideshowProps) {
   const { isLearner } = useUserRole();
+  const isApproved = approvalStatus === "approved";
   const audioRef = useRef<HTMLAudioElement>(null);
   const stageRef = useRef<HTMLDivElement>(null);
   const idxRef = useRef(0);
@@ -71,6 +77,10 @@ export default function NarratedSlideshow({ moduleId, title, onModuleComplete }:
       if (error) throw error;
       return (data && data[0]) || null;
     },
+    // Approved modules are guaranteed to already be fully built - there's no
+    // reason to ever check build status for them, every open should be
+    // instant, not a round of "is it still building?" polling.
+    enabled: !isApproved,
     refetchInterval: (q) => (q.state.data?.status === "processing" || q.state.status === "error" ? 5000 : false),
     retry: 3,
   });
@@ -80,8 +90,9 @@ export default function NarratedSlideshow({ moduleId, title, onModuleComplete }:
   // building rather than assuming "done" - otherwise a transient fetch
   // failure would prematurely reveal the slideshow before narration
   // audio has actually finished loading in, exactly like when it was
-  // simply skipping this check entirely.
-  const stillBuilding = jobLoading || jobErrored || job?.status === "processing";
+  // simply skipping this check entirely. Approved modules skip this
+  // entirely (see above) and are simply never "still building".
+  const stillBuilding = !isApproved && (jobLoading || jobErrored || job?.status === "processing");
 
   const { data: slides = [], isError: slidesErrored } = useQuery({
     queryKey: ["slideshow-assets", moduleId],
@@ -106,10 +117,13 @@ export default function NarratedSlideshow({ moduleId, title, onModuleComplete }:
       return images.map((img, i) => ({ image: img, audio: bySlide.get(i + 1) || null }));
     },
     retry: 3,
-    // Keep refreshing while narration is still being generated (audio gets
-    // added slide-by-slide after images already exist), not just until
-    // images show up - otherwise we'd stop polling before audio is complete.
+    // Approved modules only need one fetch, ever - the content is guaranteed
+    // final, so there's nothing to poll for. Everything else keeps
+    // refreshing while narration is still being generated (audio gets added
+    // slide-by-slide after images already exist), not just until images
+    // show up - otherwise we'd stop polling before audio is complete.
     refetchInterval: (q) => {
+      if (isApproved) return false;
       const current = q.state.data as Slide[] | undefined;
       const noSlidesYet = !current || current.length === 0;
       return (stillBuilding || noSlidesYet || q.state.status === "error") ? 4000 : false;
