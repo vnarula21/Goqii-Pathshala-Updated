@@ -8,6 +8,7 @@ import {
   Play, Pause, ChevronLeft, ChevronRight, Volume2, Loader2, Sparkles, CheckCircle, RotateCcw, Maximize, Minimize,
 } from "lucide-react";
 import { toast } from "sonner";
+import { useUserRole } from "@/hooks/useUserRole";
 
 interface Slide {
   image: string;
@@ -29,6 +30,7 @@ const SILENT_MS = 6000;
  * off the <audio> "ended" event so the chain never stalls between slides.
  */
 export default function NarratedSlideshow({ moduleId, title, onModuleComplete }: NarratedSlideshowProps) {
+  const { isLearner } = useUserRole();
   const audioRef = useRef<HTMLAudioElement>(null);
   const stageRef = useRef<HTMLDivElement>(null);
   const idxRef = useRef(0);
@@ -271,6 +273,27 @@ export default function NarratedSlideshow({ moduleId, title, onModuleComplete }:
 
   // ── Building: progress ─────────────────────────────────────────────────
   if (!ready) {
+    // Learners should never see build-in-progress technical detail (progress
+    // bars, "runs on a free server", current_step logs) - a module reaching
+    // them mid-build means it was assigned/opened before narration finished,
+    // which is a workflow issue to fix upstream, not something to expose
+    // here. Keep their message simple and non-technical.
+    if (isLearner) {
+      return (
+        <Card>
+          <CardContent className="pt-6">
+            <div className="flex items-center gap-3">
+              <Loader2 className="h-5 w-5 animate-spin text-primary" />
+              <div>
+                <p className="font-medium">This module isn't ready yet</p>
+                <p className="text-sm text-muted-foreground">Please check back in a little while.</p>
+              </div>
+            </div>
+          </CardContent>
+        </Card>
+      );
+    }
+
     return (
       <Card>
         <CardContent className="pt-6">
