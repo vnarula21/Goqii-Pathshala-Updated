@@ -1,8 +1,7 @@
-import { useState } from "react";
+import { useMemo, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
-import { Badge } from "@/components/ui/badge";
-import { ScrollArea } from "@/components/ui/scroll-area";
+import { Input } from "@/components/ui/input";
 import {
   Dialog,
   DialogContent,
@@ -14,17 +13,25 @@ import {
 import { useCourseLibrary, Course } from "@/hooks/useCourseLibrary";
 import { useLearners, Learner } from "@/hooks/useLearners";
 import { useCourseAssignments } from "@/hooks/useCourseAssignments";
-import { BookOpen, Users, ChevronRight, ChevronLeft, Check, Loader2 } from "lucide-react";
+import { BookOpen, Users, ChevronRight, ChevronLeft, Check, Loader2, Search } from "lucide-react";
 
 interface CourseAssignmentFlowProps {
   open: boolean;
   onOpenChange: (open: boolean) => void;
 }
 
+// Full-screen overrides for the shared Dialog (which is a small centered box by default).
+const FULLSCREEN_CLASS =
+  "left-0 top-0 h-screen w-screen max-w-none translate-x-0 translate-y-0 gap-0 rounded-none p-0 sm:rounded-none flex flex-col " +
+  "data-[state=open]:slide-in-from-left-0 data-[state=open]:slide-in-from-top-0 " +
+  "data-[state=closed]:slide-out-to-left-0 data-[state=closed]:slide-out-to-top-0";
+
 export function CourseAssignmentFlow({ open, onOpenChange }: CourseAssignmentFlowProps) {
   const [step, setStep] = useState<"courses" | "learners" | "done">("courses");
   const [selectedCourseIds, setSelectedCourseIds] = useState<string[]>([]);
   const [selectedLearnerIds, setSelectedLearnerIds] = useState<string[]>([]);
+  const [courseSearch, setCourseSearch] = useState("");
+  const [learnerSearch, setLearnerSearch] = useState("");
 
   const { allCourses, isLoading: coursesLoading } = useCourseLibrary();
   const { learners, isLoading: learnersLoading } = useLearners();
@@ -32,6 +39,24 @@ export function CourseAssignmentFlow({ open, onOpenChange }: CourseAssignmentFlo
 
   // Filter to only show published courses
   const publishedCourses = allCourses.filter((c) => c.is_published);
+
+  const visibleCourses = useMemo(() => {
+    const q = courseSearch.trim().toLowerCase();
+    return q
+      ? publishedCourses.filter((c) => c.title.toLowerCase().includes(q))
+      : publishedCourses;
+  }, [publishedCourses, courseSearch]);
+
+  const visibleLearners = useMemo(() => {
+    const q = learnerSearch.trim().toLowerCase();
+    return q
+      ? learners.filter(
+          (l) =>
+            (l.full_name || "").toLowerCase().includes(q) ||
+            l.email.toLowerCase().includes(q)
+        )
+      : learners;
+  }, [learners, learnerSearch]);
 
   const handleCourseToggle = (courseId: string) => {
     setSelectedCourseIds((prev) =>
@@ -49,20 +74,29 @@ export function CourseAssignmentFlow({ open, onOpenChange }: CourseAssignmentFlo
     );
   };
 
+  // "Select all" acts on what is currently visible (i.e. after searching),
+  // and keeps anything already selected outside the current search.
+  const allVisibleCoursesSelected =
+    visibleCourses.length > 0 && visibleCourses.every((c) => selectedCourseIds.includes(c.id));
+  const allVisibleLearnersSelected =
+    visibleLearners.length > 0 && visibleLearners.every((l) => selectedLearnerIds.includes(l.id));
+
   const handleSelectAllCourses = () => {
-    if (selectedCourseIds.length === publishedCourses.length) {
-      setSelectedCourseIds([]);
-    } else {
-      setSelectedCourseIds(publishedCourses.map((c) => c.id));
-    }
+    const visibleIds = visibleCourses.map((c) => c.id);
+    setSelectedCourseIds((prev) =>
+      allVisibleCoursesSelected
+        ? prev.filter((id) => !visibleIds.includes(id))
+        : Array.from(new Set([...prev, ...visibleIds]))
+    );
   };
 
   const handleSelectAllLearners = () => {
-    if (selectedLearnerIds.length === learners.length) {
-      setSelectedLearnerIds([]);
-    } else {
-      setSelectedLearnerIds(learners.map((l) => l.id));
-    }
+    const visibleIds = visibleLearners.map((l) => l.id);
+    setSelectedLearnerIds((prev) =>
+      allVisibleLearnersSelected
+        ? prev.filter((id) => !visibleIds.includes(id))
+        : Array.from(new Set([...prev, ...visibleIds]))
+    );
   };
 
   const handleAssign = async () => {
@@ -77,18 +111,17 @@ export function CourseAssignmentFlow({ open, onOpenChange }: CourseAssignmentFlo
     setStep("courses");
     setSelectedCourseIds([]);
     setSelectedLearnerIds([]);
+    setCourseSearch("");
+    setLearnerSearch("");
     onOpenChange(false);
   };
 
-  const allCoursesSelected = selectedCourseIds.length === publishedCourses.length && publishedCourses.length > 0;
-  const allLearnersSelected = selectedLearnerIds.length === learners.length && learners.length > 0;
-
   return (
     <Dialog open={open} onOpenChange={handleClose}>
-      <DialogContent className="sm:max-w-lg">
+      <DialogContent className={FULLSCREEN_CLASS}>
         {step === "courses" && (
           <>
-            <DialogHeader>
+            <DialogHeader className="border-b px-6 py-4 pr-14">
               <DialogTitle className="flex items-center gap-2">
                 <BookOpen className="h-5 w-5 text-primary" />
                 Select Courses
@@ -99,44 +132,48 @@ export function CourseAssignmentFlow({ open, onOpenChange }: CourseAssignmentFlo
             </DialogHeader>
 
             {coursesLoading ? (
-              <div className="flex items-center justify-center py-8">
+              <div className="flex flex-1 items-center justify-center">
                 <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
               </div>
             ) : publishedCourses.length === 0 ? (
-              <div className="text-center py-8 text-muted-foreground">
+              <div className="flex flex-1 items-center justify-center text-muted-foreground">
                 No published courses available
               </div>
             ) : (
               <>
-                <div className="flex items-center gap-2 pb-2 border-b">
-                  <Checkbox
-                    id="select-all-courses"
-                    checked={allCoursesSelected}
-                    onCheckedChange={handleSelectAllCourses}
-                  />
-                  <label
-                    htmlFor="select-all-courses"
-                    className="text-sm font-medium cursor-pointer"
-                  >
-                    Select All ({publishedCourses.length})
-                  </label>
+                <SearchAndSelectAll
+                  idPrefix="courses"
+                  placeholder="Search courses by name..."
+                  search={courseSearch}
+                  onSearchChange={setCourseSearch}
+                  allSelected={allVisibleCoursesSelected}
+                  onSelectAll={handleSelectAllCourses}
+                  visibleCount={visibleCourses.length}
+                  selectedCount={selectedCourseIds.length}
+                  noun="course"
+                />
+                <div className="flex-1 min-h-0 overflow-y-auto px-6 py-4">
+                  {visibleCourses.length === 0 ? (
+                    <p className="py-12 text-center text-muted-foreground">
+                      No courses match "{courseSearch}"
+                    </p>
+                  ) : (
+                    <div className="grid gap-2 md:grid-cols-2 xl:grid-cols-3">
+                      {visibleCourses.map((course) => (
+                        <CourseItem
+                          key={course.id}
+                          course={course}
+                          selected={selectedCourseIds.includes(course.id)}
+                          onToggle={() => handleCourseToggle(course.id)}
+                        />
+                      ))}
+                    </div>
+                  )}
                 </div>
-                <ScrollArea className="h-[300px] pr-4">
-                  <div className="space-y-2">
-                    {publishedCourses.map((course) => (
-                      <CourseItem
-                        key={course.id}
-                        course={course}
-                        selected={selectedCourseIds.includes(course.id)}
-                        onToggle={() => handleCourseToggle(course.id)}
-                      />
-                    ))}
-                  </div>
-                </ScrollArea>
               </>
             )}
 
-            <DialogFooter>
+            <DialogFooter className="gap-2 border-t px-6 py-4">
               <Button variant="outline" onClick={handleClose}>
                 Cancel
               </Button>
@@ -153,55 +190,59 @@ export function CourseAssignmentFlow({ open, onOpenChange }: CourseAssignmentFlo
 
         {step === "learners" && (
           <>
-            <DialogHeader>
+            <DialogHeader className="border-b px-6 py-4 pr-14">
               <DialogTitle className="flex items-center gap-2">
                 <Users className="h-5 w-5 text-primary" />
                 Select Learners
               </DialogTitle>
               <DialogDescription>
-                {selectedCourseIds.length} course(s) selected. Choose learners to assign.
+                {selectedCourseIds.length} course(s) selected. Search for a learner or choose several to assign.
               </DialogDescription>
             </DialogHeader>
 
             {learnersLoading ? (
-              <div className="flex items-center justify-center py-8">
+              <div className="flex flex-1 items-center justify-center">
                 <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
               </div>
             ) : learners.length === 0 ? (
-              <div className="text-center py-8 text-muted-foreground">
+              <div className="flex flex-1 items-center justify-center text-muted-foreground">
                 No learners available
               </div>
             ) : (
               <>
-                <div className="flex items-center gap-2 pb-2 border-b">
-                  <Checkbox
-                    id="select-all-learners"
-                    checked={allLearnersSelected}
-                    onCheckedChange={handleSelectAllLearners}
-                  />
-                  <label
-                    htmlFor="select-all-learners"
-                    className="text-sm font-medium cursor-pointer"
-                  >
-                    Select All ({learners.length})
-                  </label>
+                <SearchAndSelectAll
+                  idPrefix="learners"
+                  placeholder="Search learners by name or email..."
+                  search={learnerSearch}
+                  onSearchChange={setLearnerSearch}
+                  allSelected={allVisibleLearnersSelected}
+                  onSelectAll={handleSelectAllLearners}
+                  visibleCount={visibleLearners.length}
+                  selectedCount={selectedLearnerIds.length}
+                  noun="learner"
+                />
+                <div className="flex-1 min-h-0 overflow-y-auto px-6 py-4">
+                  {visibleLearners.length === 0 ? (
+                    <p className="py-12 text-center text-muted-foreground">
+                      No learners match "{learnerSearch}"
+                    </p>
+                  ) : (
+                    <div className="grid gap-2 md:grid-cols-2 xl:grid-cols-3">
+                      {visibleLearners.map((learner) => (
+                        <LearnerItem
+                          key={learner.id}
+                          learner={learner}
+                          selected={selectedLearnerIds.includes(learner.id)}
+                          onToggle={() => handleLearnerToggle(learner.id)}
+                        />
+                      ))}
+                    </div>
+                  )}
                 </div>
-                <ScrollArea className="h-[300px] pr-4">
-                  <div className="space-y-2">
-                    {learners.map((learner) => (
-                      <LearnerItem
-                        key={learner.id}
-                        learner={learner}
-                        selected={selectedLearnerIds.includes(learner.id)}
-                        onToggle={() => handleLearnerToggle(learner.id)}
-                      />
-                    ))}
-                  </div>
-                </ScrollArea>
               </>
             )}
 
-            <DialogFooter className="gap-2">
+            <DialogFooter className="gap-2 border-t px-6 py-4">
               <Button variant="outline" onClick={() => setStep("courses")}>
                 <ChevronLeft className="mr-2 h-4 w-4" />
                 Back
@@ -218,7 +259,8 @@ export function CourseAssignmentFlow({ open, onOpenChange }: CourseAssignmentFlo
                 ) : (
                   <>
                     <Check className="mr-2 h-4 w-4" />
-                    Done
+                    Assign to {selectedLearnerIds.length || ""} learner
+                    {selectedLearnerIds.length === 1 ? "" : "s"}
                   </>
                 )}
               </Button>
@@ -228,7 +270,7 @@ export function CourseAssignmentFlow({ open, onOpenChange }: CourseAssignmentFlo
 
         {step === "done" && (
           <>
-            <DialogHeader>
+            <DialogHeader className="border-b px-6 py-4 pr-14">
               <DialogTitle className="flex items-center gap-2 text-[hsl(var(--success))]">
                 <Check className="h-5 w-5" />
                 Courses Assigned
@@ -239,8 +281,8 @@ export function CourseAssignmentFlow({ open, onOpenChange }: CourseAssignmentFlo
               </DialogDescription>
             </DialogHeader>
 
-            <div className="py-4 text-center">
-              <div className="inline-flex items-center justify-center w-16 h-16 rounded-full bg-[hsl(var(--success))]/10 mb-4">
+            <div className="flex flex-1 flex-col items-center justify-center text-center">
+              <div className="mb-4 inline-flex h-16 w-16 items-center justify-center rounded-full bg-[hsl(var(--success))]/10">
                 <Check className="h-8 w-8 text-[hsl(var(--success))]" />
               </div>
               <p className="text-sm text-muted-foreground">
@@ -248,13 +290,68 @@ export function CourseAssignmentFlow({ open, onOpenChange }: CourseAssignmentFlo
               </p>
             </div>
 
-            <DialogFooter>
+            <DialogFooter className="border-t px-6 py-4">
               <Button onClick={handleClose}>Close</Button>
             </DialogFooter>
           </>
         )}
       </DialogContent>
     </Dialog>
+  );
+}
+
+function SearchAndSelectAll({
+  idPrefix,
+  placeholder,
+  search,
+  onSearchChange,
+  allSelected,
+  onSelectAll,
+  visibleCount,
+  selectedCount,
+  noun,
+}: {
+  idPrefix: string;
+  placeholder: string;
+  search: string;
+  onSearchChange: (v: string) => void;
+  allSelected: boolean;
+  onSelectAll: () => void;
+  visibleCount: number;
+  selectedCount: number;
+  noun: string;
+}) {
+  return (
+    <div className="flex flex-wrap items-center gap-4 border-b px-6 py-3">
+      <div className="relative w-full max-w-md">
+        <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+        <Input
+          autoFocus
+          placeholder={placeholder}
+          value={search}
+          onChange={(e) => onSearchChange(e.target.value)}
+          className="pl-9"
+        />
+      </div>
+      <div className="flex items-center gap-2">
+        <Checkbox
+          id={`select-all-${idPrefix}`}
+          checked={allSelected}
+          onCheckedChange={onSelectAll}
+          disabled={visibleCount === 0}
+        />
+        <label
+          htmlFor={`select-all-${idPrefix}`}
+          className="cursor-pointer text-sm font-medium"
+        >
+          {search.trim() ? `Select all matching (${visibleCount})` : `Select All (${visibleCount})`}
+        </label>
+      </div>
+      <span className="ml-auto text-sm text-muted-foreground">
+        {selectedCount} {noun}
+        {selectedCount === 1 ? "" : "s"} selected
+      </span>
+    </div>
   );
 }
 

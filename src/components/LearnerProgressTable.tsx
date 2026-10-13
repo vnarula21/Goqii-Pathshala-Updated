@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { Fragment, useMemo, useState } from "react";
 import {
   Table,
   TableBody,
@@ -12,7 +12,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { useLearnerProgress, LearnerProgressData } from "@/hooks/useLearnerProgress";
-import { Search, ChevronDown, ChevronUp, User, Download } from "lucide-react";
+import { Search, ChevronDown, ChevronUp, User, Download, X } from "lucide-react";
 import { Skeleton } from "@/components/ui/skeleton";
 import { exportToCsv } from "@/lib/exportCsv";
 
@@ -21,13 +21,71 @@ export function LearnerProgressTable() {
   const [search, setSearch] = useState("");
   const [expandedLearner, setExpandedLearner] = useState<string | null>(null);
 
-  const filteredLearners = learnersProgress?.filter((lp) => {
+  // Optional date range (YYYY-MM-DD). When set, only activity inside the range
+  // is shown in the table and included in the CSV export.
+  const [dateFrom, setDateFrom] = useState("");
+  const [dateTo, setDateTo] = useState("");
+  const rangeActive = !!(dateFrom || dateTo);
+  const invalidRange = !!(dateFrom && dateTo && dateFrom > dateTo);
+
+  const filteredLearners = useMemo(() => {
+    const fromMs = dateFrom ? new Date(`${dateFrom}T00:00:00`).getTime() : null;
+    const toMs = dateTo ? new Date(`${dateTo}T23:59:59.999`).getTime() : null;
+    const inRange = (iso?: string | null) => {
+      if (!iso) return false;
+      const t = new Date(iso).getTime();
+      if (fromMs !== null && t < fromMs) return false;
+      if (toMs !== null && t > toMs) return false;
+      return true;
+    };
     const searchLower = search.toLowerCase();
-    return (
-      lp.learner.email.toLowerCase().includes(searchLower) ||
-      lp.learner.full_name?.toLowerCase().includes(searchLower)
-    );
-  });
+
+    return learnersProgress
+      ?.filter(
+        (lp) =>
+          lp.learner.email.toLowerCase().includes(searchLower) ||
+          lp.learner.full_name?.toLowerCase().includes(searchLower)
+      )
+      .map((lp) =>
+        fromMs === null && toMs === null
+          ? lp
+          : {
+              ...lp,
+              courses: lp.courses.filter(
+                (c) => inRange(c.started_at) || inRange(c.completed_at)
+              ),
+              assessments: lp.assessments.filter(
+                (a) => inRange(a.submitted_at) || inRange(a.graded_at)
+              ),
+            }
+      )
+      .filter(
+        (lp) =>
+          fromMs === null && toMs === null
+            ? true
+            : lp.courses.length > 0 || lp.assessments.length > 0
+      );
+  }, [learnersProgress, search, dateFrom, dateTo]);
+
+  const toDateInput = (d: Date) => {
+    const pad = (n: number) => String(n).padStart(2, "0");
+    return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
+  };
+
+  const applyPreset = (preset: "7d" | "30d" | "month") => {
+    const today = new Date();
+    const start = new Date(today);
+    if (preset === "7d") start.setDate(today.getDate() - 6);
+    else if (preset === "30d") start.setDate(today.getDate() - 29);
+    else start.setDate(1);
+    setDateFrom(toDateInput(start));
+    setDateTo(toDateInput(today));
+  };
+
+  const clearDates = () => {
+    setDateFrom("");
+    setDateTo("");
+  };
 
   const getOverallProgress = (learner: LearnerProgressData) => {
     const completedCourses = learner.courses.filter((c) => c.is_completed).length;
@@ -40,7 +98,7 @@ export function LearnerProgressTable() {
   };
 
   const handleExport = () => {
-    if (!filteredLearners?.length) return;
+    if (!filteredLearners?.length || invalidRange) return;
 
     const rows = filteredLearners.flatMap((lp) => {
       if (lp.courses.length === 0) {
@@ -48,7 +106,7 @@ export function LearnerProgressTable() {
           "Learner Name": lp.learner.full_name || "",
           "Email": lp.learner.email,
           "Course": "",
-          "Status": "No courses started",
+          "Status": rangeActive ? "No course activity in selected dates" : "No courses started",
           "Score": "",
           "Started": "",
           "Completed": "",
@@ -65,7 +123,10 @@ export function LearnerProgressTable() {
       }));
     });
 
-    exportToCsv(`learner-progress-${new Date().toISOString().slice(0, 10)}.csv`, rows);
+    const suffix = rangeActive
+      ? `${dateFrom || "start"}_to_${dateTo || "today"}`
+      : new Date().toISOString().slice(0, 10);
+    exportToCsv(`learner-progress-${suffix}.csv`, rows);
   };
 
   if (isLoading) {
@@ -100,11 +161,72 @@ export function LearnerProgressTable() {
                 className="pl-9"
               />
             </div>
-            <Button variant="outline" onClick={handleExport} disabled={!filteredLearners?.length}>
+            <Button
+              variant="outline"
+              onClick={handleExport}
+              disabled={!filteredLearners?.length || invalidRange}
+            >
               <Download className="h-4 w-4 mr-2" />
               Export CSV
             </Button>
           </div>
+        </div>
+
+        <div className="flex flex-wrap items-end gap-3 pt-4">
+          <div className="space-y-1">
+            <label htmlFor="progress-from" className="text-xs text-muted-foreground">
+              From date
+            </label>
+            <Input
+              id="progress-from"
+              type="date"
+              value={dateFrom}
+              max={dateTo || undefined}
+              onChange={(e) => setDateFrom(e.target.value)}
+              className="w-40"
+            />
+          </div>
+          <div className="space-y-1">
+            <label htmlFor="progress-to" className="text-xs text-muted-foreground">
+              To date
+            </label>
+            <Input
+              id="progress-to"
+              type="date"
+              value={dateTo}
+              min={dateFrom || undefined}
+              onChange={(e) => setDateTo(e.target.value)}
+              className="w-40"
+            />
+          </div>
+          <div className="flex flex-wrap items-center gap-2">
+            <Button variant="secondary" size="sm" onClick={() => applyPreset("7d")}>
+              Last 7 days
+            </Button>
+            <Button variant="secondary" size="sm" onClick={() => applyPreset("30d")}>
+              Last 30 days
+            </Button>
+            <Button variant="secondary" size="sm" onClick={() => applyPreset("month")}>
+              This month
+            </Button>
+            {rangeActive && (
+              <Button variant="ghost" size="sm" onClick={clearDates}>
+                <X className="h-4 w-4 mr-1" />
+                Clear dates
+              </Button>
+            )}
+          </div>
+          {invalidRange ? (
+            <p className="text-xs text-destructive">
+              "From" date must be on or before the "To" date.
+            </p>
+          ) : (
+            <p className="text-xs text-muted-foreground">
+              {rangeActive
+                ? "Showing and exporting activity (course start/completion, assessment submission/grading) in this date range."
+                : "Pick dates to limit the table and the CSV export. Leave empty for all time."}
+            </p>
+          )}
         </div>
       </CardHeader>
       <CardContent>
@@ -133,9 +255,8 @@ export function LearnerProgressTable() {
                 ).length;
 
                 return (
-                  <>
+                  <Fragment key={lp.learner.id}>
                     <TableRow
-                      key={lp.learner.id}
                       className="cursor-pointer hover:bg-muted/50"
                       onClick={() =>
                         setExpandedLearner(isExpanded ? null : lp.learner.id)
@@ -274,7 +395,7 @@ export function LearnerProgressTable() {
                         </TableCell>
                       </TableRow>
                     )}
-                  </>
+                  </Fragment>
                 );
               })}
             </TableBody>
