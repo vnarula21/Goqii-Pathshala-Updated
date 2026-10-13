@@ -224,6 +224,9 @@ export default function UserManagement() {
                     onChange={(e) => setNewUser({ ...newUser, password: e.target.value })}
                     placeholder="••••••••"
                   />
+                  <p className="text-xs text-muted-foreground">
+                    This temporary password is emailed to the user, who must change it on first sign-in.
+                  </p>
                 </div>
                 {isAdmin && (
                   <div className="space-y-2">

@@ -114,30 +114,6 @@ export default function Auth() {
     }
   };
 
-  const handleForgotPassword = async () => {
-    if (!email) {
-      toast.error("Please enter your email address first, then click 'Forgot password?'");
-      return;
-    }
-
-    setLoading(true);
-    try {
-      const { error } = await supabase.auth.resetPasswordForEmail(email, {
-        redirectTo: `${window.location.origin}/reset-password`,
-      });
-
-      if (error) {
-        toast.error(error.message);
-      } else {
-        toast.success("Password reset email sent. Please check your inbox.");
-      }
-    } catch (error) {
-      toast.error("An unexpected error occurred");
-    } finally {
-      setLoading(false);
-    }
-  };
-
   const handleSignIn = async (e: React.FormEvent) => {
     e.preventDefault();
     setLoading(true);
@@ -250,7 +226,7 @@ export default function Auth() {
                       <Label htmlFor="signin-password">Password</Label>
                       <button
                         type="button"
-                        onClick={handleForgotPassword}
+                        onClick={() => navigate("/forgot-password", { state: { email } })}
                         className="text-sm text-primary hover:underline"
                       >
                         Forgot password?

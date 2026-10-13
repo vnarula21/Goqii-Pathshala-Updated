@@ -86,6 +86,30 @@ Edge Functions → Secrets, or `supabase secrets set`):
 | `SHOTSTACK_API_KEY` | Video rendering/assembly pipeline |
 | `TTS_SERVICE_URL` | URL of the deployed edge-tts microservice (Hugging Face Space) |
 | `TTS_SHARED_SECRET` | Shared secret between edge functions and the TTS microservice |
+| `APP_URL` | Public URL of the app, no trailing slash (e.g. `https://goqii-pathshala-updated-inky.vercel.app`). Used for the sign-in / reset links in emails |
+| `SMTP_HOST`, `SMTP_PORT` | Outgoing mail server (port `465` = TLS, `587` = STARTTLS) |
+| `SMTP_USER`, `SMTP_PASSWORD` | SMTP credentials |
+| `SMTP_FROM` | Sender address, e.g. `no-reply@goqii.com` (must be allowed by the SMTP provider) |
+| `SMTP_FROM_NAME` | Optional sender display name (default "GOQii Pathshala") |
+
+## Emails: welcome + forgot password
+
+All emails go out through `supabase/functions/_shared/email.ts` over plain SMTP,
+so any provider works (company mail server, Google Workspace, Amazon SES,
+Resend's SMTP endpoint). Set the `APP_URL` and `SMTP_*` secrets above.
+
+- **Welcome email** — `create-user` (any role) and `bulk-create-users` email the
+  new user their temporary password and sign-in link. If email is not
+  configured or sending fails, the account is still created and the UI tells the
+  manager/admin to share the password manually. Users must change the password
+  on first sign-in (`profiles.must_change_password`).
+- **Forgot password** — `/forgot-password` → `request-password-reset` edge
+  function (public, `verify_jwt = false`) emails a one-time link to
+  `/reset-password?token_hash=…`. Works for every role. It always answers
+  "sent" so it cannot reveal which emails have accounts, and the link host
+  always comes from `APP_URL`.
+- The link lifetime (1 hour) is Supabase's *Auth → Email OTP expiration*
+  setting; the app does not use Supabase's own reset-email template any more.
 
 ## Deployment
 

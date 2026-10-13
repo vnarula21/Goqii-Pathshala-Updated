@@ -181,7 +181,7 @@ export function BulkAddLearnersDialog({ open, onOpenChange, onSubmit, isSubmitti
         ) : !submitted ? (
           <>
             <p className="text-sm text-muted-foreground">
-              {preview.length} learner{preview.length !== 1 ? "s" : ""} ready to create. A temporary password will be generated for each — they'll be asked to change it on first login.
+              {preview.length} learner{preview.length !== 1 ? "s" : ""} ready to create. A temporary password will be generated and emailed to each learner — they'll be asked to change it on first login.
             </p>
             <div className="max-h-64 overflow-y-auto border rounded-md">
               <Table>
@@ -212,7 +212,7 @@ export function BulkAddLearnersDialog({ open, onOpenChange, onSubmit, isSubmitti
         ) : (
           <>
             <p className="text-sm text-muted-foreground">
-              Learners created. Download the temporary passwords now — for security, they won't be shown again after you close this window.
+              Learners created and sign-in emails sent. Download the temporary passwords now as a backup (in case any email doesn't arrive) — for security, they won't be shown again after you close this window.
             </p>
             <Button variant="outline" onClick={downloadCredentials}>
               <Download className="h-4 w-4 mr-2" />

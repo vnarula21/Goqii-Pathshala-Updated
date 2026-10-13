@@ -1,5 +1,6 @@
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
+import { sendEmail, welcomeEmail } from "../_shared/email.ts";
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
@@ -216,9 +217,20 @@ serve(async (req) => {
       }
     }
 
+    // Email the new user their sign-in details. A failure here must not undo
+    // the account; the caller is told so they can share the password manually.
+    const emailResult = await sendEmail(
+      welcomeEmail({ to: email, fullName, password, role })
+    );
+    if (!emailResult.sent) {
+      console.error(`Welcome email to ${email} not sent: ${emailResult.error}`);
+    }
+
     return new Response(
       JSON.stringify({ 
         success: true, 
+        emailSent: emailResult.sent,
+        emailError: emailResult.error,
         user: {
           id: newUserId,
           email: userData.user.email,

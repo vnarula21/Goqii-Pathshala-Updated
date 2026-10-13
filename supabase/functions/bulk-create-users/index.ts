@@ -1,5 +1,6 @@
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
+import { sendEmails, welcomeEmail, emailConfigured } from "../_shared/email.ts";
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
@@ -16,6 +17,8 @@ interface BulkResult {
   email: string;
   success: boolean;
   error?: string;
+  emailSent?: boolean;
+  emailError?: string;
 }
 
 serve(async (req) => {
@@ -112,6 +115,8 @@ serve(async (req) => {
     }
 
     const results: BulkResult[] = [];
+    // Successfully created users, kept so we can email them afterwards.
+    const created: { result: BulkResult; fullName: string; password: string }[] = [];
 
     for (const entry of users) {
       const { email, fullName, password } = entry;
@@ -157,18 +162,56 @@ serve(async (req) => {
 
         await adminClient.from('profiles').update({ must_change_password: true }).eq('id', newUserId);
 
-        results.push({ email, success: true });
+        const okResult: BulkResult = { email, success: true };
+        results.push(okResult);
+        created.push({ result: okResult, fullName, password });
       } catch (err) {
         const message = err instanceof Error ? err.message : 'Unknown error';
         results.push({ email, success: false, error: message });
       }
     }
 
+    // Send welcome emails in small parallel batches (one SMTP connection per
+    // worker). A time budget keeps the whole request under the edge function
+    // limit; anything not sent in time is reported so the manager can share
+    // those passwords from the downloaded CSV instead.
+    const EMAIL_WORKERS = 5;
+    const EMAIL_BUDGET_MS = 90_000;
+    const emailStart = Date.now();
+    const queue = [...created];
+    const markUnsent = (item: typeof created[number], error: string) => {
+      item.result.emailSent = false;
+      item.result.emailError = error;
+    };
+
+    if (!emailConfigured()) {
+      for (const item of queue) markUnsent(item, 'Email is not configured');
+    } else {
+      const worker = async () => {
+        while (queue.length > 0) {
+          if (Date.now() - emailStart > EMAIL_BUDGET_MS) return;
+          const chunk = queue.splice(0, 10);
+          const outcomes = await sendEmails(
+            chunk.map((c) =>
+              welcomeEmail({ to: c.result.email, fullName: c.fullName, password: c.password, role: 'learner' })
+            )
+          );
+          chunk.forEach((c, i) => {
+            if (outcomes[i].sent) c.result.emailSent = true;
+            else markUnsent(c, outcomes[i].error || 'Unknown email error');
+          });
+        }
+      };
+      await Promise.all(Array.from({ length: EMAIL_WORKERS }, worker));
+      for (const item of queue) markUnsent(item, 'Not sent: time limit reached');
+    }
+
+    const emailsSent = results.filter(r => r.emailSent).length;
     const successCount = results.filter(r => r.success).length;
     const failureCount = results.length - successCount;
 
     return new Response(
-      JSON.stringify({ success: true, successCount, failureCount, results }),
+      JSON.stringify({ success: true, successCount, failureCount, emailsSent, emailsFailed: successCount - emailsSent, results }),
       { status: 200, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
     );
 

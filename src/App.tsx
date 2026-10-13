@@ -34,6 +34,7 @@ import CourseGroupManagement from "./pages/CourseGroupManagement";
 import TTSTestPage from "./pages/TTSTestPage";
 import ChangePassword from "./pages/ChangePassword";
 import ResetPassword from "./pages/ResetPassword";
+import ForgotPassword from "./pages/ForgotPassword";
 import MyCertificates from "./pages/MyCertificates";
 
 const queryClient = new QueryClient();
@@ -48,6 +49,7 @@ const App = () => (
           <Route path="/" element={<Home />} />
           <Route path="/auth" element={<Auth />} />
           <Route path="/change-password" element={<ChangePassword />} />
+          <Route path="/forgot-password" element={<ForgotPassword />} />
           <Route path="/reset-password" element={<ResetPassword />} />
           <Route path="/library" element={<Library />} />
           <Route path="/library/:moduleId" element={<ModuleViewer />} />

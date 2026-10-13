@@ -35,3 +35,6 @@ verify_jwt = false
 
 [functions.generate-slide-images]
 verify_jwt = false
+
+[functions.request-password-reset]
+verify_jwt = false

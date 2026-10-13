@@ -51,16 +51,22 @@ export function useUsers() {
         throw new Error(data.error);
       }
 
-      return data.user;
+      return { ...data.user, emailSent: !!data.emailSent, emailError: data.emailError as string | undefined };
     },
-    onSuccess: (_, variables) => {
+    onSuccess: (created, variables) => {
       // Invalidate all relevant queries based on the role
       queryClient.invalidateQueries({ queryKey: ["users-by-role", variables.role] });
       queryClient.invalidateQueries({ queryKey: ["learners"] });
       queryClient.invalidateQueries({ queryKey: ["managers"] });
       queryClient.invalidateQueries({ queryKey: ["manager-access"] });
       queryClient.invalidateQueries({ queryKey: ["user-organizations"] });
-      toast.success("User created successfully");
+      if (created.emailSent) {
+        toast.success(`User created. Sign-in details were emailed to ${created.email}.`);
+      } else {
+        toast.warning(
+          `User created, but the welcome email could not be sent${created.emailError ? ` (${created.emailError})` : ""}. Please share the password with them directly.`
+        );
+      }
     },
     onError: (error) => {
       toast.error("Failed to create user: " + error.message);
@@ -110,14 +116,22 @@ export function useUsers() {
       if (data?.error) {
         throw new Error(data.error);
       }
-      return data as { successCount: number; failureCount: number; results: { email: string; success: boolean; error?: string }[] };
+      return data as { successCount: number; failureCount: number; emailsSent: number; emailsFailed: number; results: { email: string; success: boolean; error?: string; emailSent?: boolean; emailError?: string }[] };
     },
     onSuccess: (data) => {
       queryClient.invalidateQueries({ queryKey: ["learners"] });
-      if (data.failureCount === 0) {
-        toast.success(`Created ${data.successCount} learners successfully`);
+      const emailNote =
+        data.successCount > 0
+          ? data.emailsFailed === 0
+            ? " Sign-in emails sent to all of them."
+            : ` ${data.emailsSent} sign-in emails sent, ${data.emailsFailed} could not be sent — share those passwords from the downloaded CSV.`
+          : "";
+      if (data.failureCount === 0 && data.emailsFailed === 0) {
+        toast.success(`Created ${data.successCount} learners successfully.${emailNote}`);
+      } else if (data.failureCount === 0) {
+        toast.warning(`Created ${data.successCount} learners.${emailNote}`);
       } else {
-        toast.warning(`Created ${data.successCount} learners, ${data.failureCount} failed`);
+        toast.warning(`Created ${data.successCount} learners, ${data.failureCount} failed.${emailNote}`);
       }
     },
     onError: (error) => {
