@@ -102,9 +102,12 @@ This repo was cleaned up for handover on 2026-10-13: dead/unused components,
 two orphaned edge functions (`format-content`, `generate-content` — both
 superseded by `generate-prompt`/`generate-final-module`), stray build
 artifacts, and duplicate lockfiles were removed. The database's Row-Level
-Security policies were also rewritten for performance (see the migration
-named `fix_rls_auth_initplan_perf`) — this was causing intermittent 500/503
-errors under load before the fix.
+Security policies were also rewritten for performance (migrations `fix_rls_auth_initplan_perf` and `fix_rls_recursive_policy_expansion`).
+Policies on modules/course_modules/module_assignments/module_slide_audio used to
+query each other directly, which made Postgres re-expand the policy chain on every
+query (slide-audio reads took ~30s and hit the 8s API timeout, so modules wouldn't
+open). Cross-table checks now live in SECURITY DEFINER helper functions; when you
+add a policy that looks at another RLS-protected table, use a helper, not a subquery.
 
 If you're taking this over:
 1. Get access to the Supabase project (`gtenzgvqnfytmxuclthe`, org `aphwwvfzqwbqryknfqqq`) and the Vercel project.
