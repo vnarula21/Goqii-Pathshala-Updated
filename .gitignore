@@ -32,3 +32,17 @@ dist-ssr
 # Lovable local metadata
 .lovable/
 .vercel
+
+# Supabase CLI local state
+supabase/.temp/
+supabase/.branches/
+
+# Python (TTS service)
+__pycache__/
+*.pyc
+
+# Package manager: this project uses npm — don't commit other managers' lockfiles
+bun.lock
+bun.lockb
+yarn.lock
+pnpm-lock.yaml

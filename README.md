@@ -1,73 +1,112 @@
-# Welcome to your Lovable project
+# GOQii Pathshala
 
-## Project info
+An internal Learning Management System (LMS): SME-authored training modules,
+AI-assisted module/quiz/assignment generation, course assembly, learner
+progress tracking, certificates, and a role-based review/approval workflow.
 
-**URL**: https://lovable.dev/projects/d955923e-5469-4b95-9b39-d5abed27502e
+## Roles
 
-## How can I edit this code?
+- **Learner** — takes assigned courses/modules, quizzes, assignments; earns certificates.
+- **Manager** — manages learners in their organization, assigns courses, reviews progress.
+- **SME** ("Subject Matter Expert") — authors modules via the AI module-creation wizard ("Forge").
+- **SME Expert** — reviews and approves/rejects modules submitted by SMEs.
+- **Admin** — full access: users, organizations, levels, course groups, all modules/courses.
 
-There are several ways of editing your application.
+Role is enforced both client-side (`RoleGuard` on routes) and server-side
+(Postgres Row-Level Security policies — see `supabase/migrations/`).
 
-**Use Lovable**
+## Architecture
 
-Simply visit the [Lovable Project](https://lovable.dev/projects/d955923e-5469-4b95-9b39-d5abed27502e) and start prompting.
+```
+┌─────────────────────┐      ┌──────────────────────────┐      ┌─────────────────────┐
+│  Frontend            │      │  Supabase (gtenzgvqnfytmxuclthe)│  │  TTS microservice    │
+│  React + TS + Vite   │─────▶│  Postgres + Auth + Storage│      │  (edge-tts, Docker)   │
+│  shadcn-ui, Tailwind │      │  + Edge Functions (Deno)  │─────▶│  Hugging Face Spaces │
+│  deployed on Vercel  │      └──────────────────────────┘      └─────────────────────┘
+└─────────────────────┘                    │
+                                            ▼
+                                   Gemini / ElevenLabs / Runway /
+                                   Shotstack (AI content, voice,
+                                   and video generation APIs)
+```
 
-Changes made via Lovable will be committed automatically to this repo.
+- **Frontend**: Vite + React + TypeScript, shadcn-ui components, Tailwind CSS,
+  React Router, TanStack Query. Deployed on **Vercel** (see `vercel.json`).
+- **Backend**: Supabase project `gtenzgvqnfytmxuclthe` — Postgres database
+  (schema + RLS policies under `supabase/migrations/`), Supabase Auth, Storage,
+  and Deno-based **Edge Functions** (`supabase/functions/`) for anything that
+  needs a server-side secret (AI calls, user management, video/audio generation).
+- **TTS microservice**: `services-tts-standalone/edge-tts/` is a standalone
+  Dockerized FastAPI/edge-tts service (Microsoft neural TTS, no API key
+  needed), deployed separately on Hugging Face Spaces. The edge functions
+  `generate-voice`, `generate-audio`, and `convert-ppt-to-video` call it over
+  HTTP. See that folder's own README for deploy steps.
 
-**Use your preferred IDE**
+## AI module-creation pipeline ("Forge")
 
-If you want to work locally using your own IDE, you can clone this repo and push changes. Pushed changes will also be reflected in Lovable.
+`src/components/forge/*` + `src/hooks/useModuleForge.tsx` drive a 5-step
+wizard that calls these edge functions in sequence:
 
-The only requirement is having Node.js & npm installed - [install with nvm](https://github.com/nvm-sh/nvm#installing-and-updating)
+1. `generate-prompt` — builds the content prompt from the SME's inputs
+2. `generate-final-module` — generates the actual module content (slides/doc/article)
+3. `generate-quiz` — generates quiz questions for the module
+4. `generate-assignments` — generates assignment prompts
+5. `generate-single-image` / `generate-slide-images` — AI images per slide
 
-Follow these steps:
+Video-based modules additionally use `convert-ppt-to-video` /
+`generate-video-pipeline` + `check-video-render` to turn a narrated slideshow
+into an MP4 (via Shotstack/Runway).
+
+## Local development
 
 ```sh
-# Step 1: Clone the repository using the project's Git URL.
-git clone <YOUR_GIT_URL>
-
-# Step 2: Navigate to the project directory.
-cd <YOUR_PROJECT_NAME>
-
-# Step 3: Install the necessary dependencies.
-npm i
-
-# Step 4: Start the development server with auto-reloading and an instant preview.
+npm install
+cp .env.example .env.local   # fill in your Supabase project URL + publishable key
 npm run dev
 ```
 
-**Edit a file directly in GitHub**
+## Environment variables
 
-- Navigate to the desired file(s).
-- Click the "Edit" button (pencil icon) at the top right of the file view.
-- Make your changes and commit the changes.
+**Frontend** (`.env.local`, see `.env.example`):
 
-**Use GitHub Codespaces**
+| Variable | Purpose |
+|---|---|
+| `VITE_SUPABASE_URL` | Supabase project URL |
+| `VITE_SUPABASE_PUBLISHABLE_KEY` | Supabase anon/publishable key (public-safe) |
 
-- Navigate to the main page of your repository.
-- Click on the "Code" button (green button) near the top right.
-- Select the "Codespaces" tab.
-- Click on "New codespace" to launch a new Codespace environment.
-- Edit files directly within the Codespace and commit and push your changes once you're done.
+**Edge Functions** (set as Supabase project secrets — Project Settings →
+Edge Functions → Secrets, or `supabase secrets set`):
 
-## What technologies are used for this project?
+| Variable | Purpose |
+|---|---|
+| `SUPABASE_URL`, `SUPABASE_SERVICE_ROLE_KEY`, `SUPABASE_ANON_KEY` | Auto-provided by Supabase at runtime |
+| `GEMINI_API_KEY` | AI text/image generation (module content, quizzes, assignments) |
+| `ELEVENLABS_API_KEY` | Alternate voice narration provider |
+| `RUNWAY_API_KEY` | AI video generation |
+| `SHOTSTACK_API_KEY` | Video rendering/assembly pipeline |
+| `TTS_SERVICE_URL` | URL of the deployed edge-tts microservice (Hugging Face Space) |
+| `TTS_SHARED_SECRET` | Shared secret between edge functions and the TTS microservice |
 
-This project is built with:
+## Deployment
 
-- Vite
-- TypeScript
-- React
-- shadcn-ui
-- Tailwind CSS
+- **Frontend**: pushes to the default branch auto-deploy on Vercel (`vercel.json` configures the SPA rewrite + build command).
+- **Database/Edge Functions**: managed via the Supabase CLI —
+  migrations live in `supabase/migrations/` and apply in filename order;
+  functions in `supabase/functions/` deploy individually, e.g.
+  `supabase functions deploy generate-final-module`.
+- **TTS microservice**: deployed separately — see `services-tts-standalone/edge-tts/README.md`.
 
-## How can I deploy this project?
+## Handing this project off
 
-Simply open [Lovable](https://lovable.dev/projects/d955923e-5469-4b95-9b39-d5abed27502e) and click on Share -> Publish.
+This repo was cleaned up for handover on 2026-10-13: dead/unused components,
+two orphaned edge functions (`format-content`, `generate-content` — both
+superseded by `generate-prompt`/`generate-final-module`), stray build
+artifacts, and duplicate lockfiles were removed. The database's Row-Level
+Security policies were also rewritten for performance (see the migration
+named `fix_rls_auth_initplan_perf`) — this was causing intermittent 500/503
+errors under load before the fix.
 
-## Can I connect a custom domain to my Lovable project?
-
-Yes, you can!
-
-To connect a domain, navigate to Project > Settings > Domains and click Connect Domain.
-
-Read more here: [Setting up a custom domain](https://docs.lovable.dev/features/custom-domain#custom-domain)
+If you're taking this over:
+1. Get access to the Supabase project (`gtenzgvqnfytmxuclthe`, org `aphwwvfzqwbqryknfqqq`) and the Vercel project.
+2. Get the edge function secrets listed above (ask the previous owner — they are not in this repo, by design).
+3. Run `npm run build` once to confirm your environment matches before changing anything.
