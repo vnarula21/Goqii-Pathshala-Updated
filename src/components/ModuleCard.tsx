@@ -84,10 +84,6 @@ export function ModuleCard({ module, showOwnerActions = true, showCreator = fals
     ? moduleTypeLabels[module.module_type].icon 
     : FileText;
 
-  const slideCount = module.module_type === "document" 
-    ? `${module.slides?.sections?.length || 0} sections`
-    : `${module.slides?.chapters?.length || (Array.isArray(module.slides) ? module.slides.length : 0)} slides`;
-
   const approvalStatus = module.approval_status || "draft";
   const statusConfig = approvalStatusConfig[approvalStatus] || approvalStatusConfig.draft;
   const isOwner = user?.id === module.user_id;
@@ -157,7 +153,10 @@ export function ModuleCard({ module, showOwnerActions = true, showCreator = fals
 
           {/* Metadata row */}
           <div className="flex items-center gap-3 text-[10px] text-muted-foreground">
-            <span>{slideCount}</span>
+            <span className="flex items-center gap-0.5" title="Date created">
+              <Calendar className="h-2.5 w-2.5" />
+              Created {format(new Date(module.created_at), "d MMM yyyy")}
+            </span>
             {module.module_tags.length > 0 && (
               <div className="flex gap-1">
                 {module.module_tags.slice(0, 2).map((mt) => (
@@ -180,10 +179,6 @@ export function ModuleCard({ module, showOwnerActions = true, showCreator = fals
                 {module.creator.full_name || module.creator.email.split('@')[0]}
               </span>
             )}
-            <span className="flex items-center gap-0.5 ml-auto">
-              <Calendar className="h-2.5 w-2.5" />
-              {format(new Date(module.created_at), "MMM d")}
-            </span>
           </div>
         </div>
 
