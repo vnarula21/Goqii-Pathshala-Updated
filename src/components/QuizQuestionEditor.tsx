@@ -86,7 +86,7 @@ export default function QuizQuestionEditor({ question, onChange }: QuizQuestionE
         <div className="space-y-2">
           <Label>Options (select correct answer)</Label>
           <RadioGroup
-            value={question.correctAnswer as string}
+            value={(question.correctAnswer as string) ?? ""}
             onValueChange={(value) => onChange({ correctAnswer: value })}
           >
             {question.options.map((option, index) => (
@@ -120,7 +120,7 @@ export default function QuizQuestionEditor({ question, onChange }: QuizQuestionE
         <div className="space-y-2">
           <Label>Correct Answer</Label>
           <RadioGroup
-            value={question.correctAnswer as string}
+            value={(question.correctAnswer as string) ?? ""}
             onValueChange={(value) => onChange({ correctAnswer: value })}
             className="flex gap-4"
           >

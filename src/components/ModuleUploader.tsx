@@ -229,10 +229,13 @@ export default function ModuleUploader() {
       // (speaker notes → edge-tts, or LLM-generated narration for note-less
       // decks). No separate pre-generation step is needed here.
 
-      // Auto-generate a thumbnail from the first slide/page of the uploaded
-      // file. Fire-and-forget - the module list will just show a fallback
-      // icon until this finishes (usually a few seconds).
-      if (newModuleId && (dbModuleType === "ppt" || dbModuleType === "pdf" || dbModuleType === "document")) {
+      // Auto-generate a thumbnail from the first page of an uploaded PDF or
+      // document. Fire-and-forget - the module list shows a fallback icon until
+      // this finishes. PPT decks are skipped on purpose: the video build already
+      // renders every slide and sets slide 1 as the thumbnail, and a second
+      // simultaneous LibreOffice conversion of the same deck only slowed (and
+      // timed out) both jobs on the render server.
+      if (newModuleId && (dbModuleType === "pdf" || dbModuleType === "document")) {
         void supabase.functions
           .invoke("generate-module-thumbnail", { body: { moduleId: newModuleId } })
           .then(({ error: fnError }) => {

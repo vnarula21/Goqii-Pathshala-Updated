@@ -19,6 +19,7 @@ import glob
 import json
 import os
 import re
+import signal
 import subprocess
 import tempfile
 import threading
@@ -152,24 +153,64 @@ class RenderRequest(BaseModel):
     maxPages: int | None = None
 
 
-def _pptx_to_pdf(pptx_path: str, outdir: str) -> str:
-    """Headless LibreOffice: .pptx/.ppt -> .pdf. A per-call UserInstallation
-    profile keeps concurrent conversions from clashing and avoids needing $HOME."""
-    profile = os.path.join(outdir, "lo-profile")
-    p = subprocess.run(
-        [
-            "soffice", "--headless", "--norestore", "--invisible", "--nodefault",
-            f"-env:UserInstallation=file://{profile}",
-            "--convert-to", "pdf", "--outdir", outdir, pptx_path,
-        ],
-        stdout=subprocess.PIPE, stderr=subprocess.PIPE, timeout=180,
+# LibreOffice is heavy and the free host has ~2 CPUs: running two conversions
+# at once makes both crawl and time out. Serialize them.
+_SOFFICE_LOCK = threading.Lock()
+
+
+def _run_group(cmd: list[str], timeout: int) -> tuple[int, bytes, bytes]:
+    """Like subprocess.run(), but on timeout kills the WHOLE process group.
+    `soffice` is a wrapper script that spawns `soffice.bin`; plain run()
+    only kills the wrapper, leaving soffice.bin running forever and eating
+    CPU, which makes every later conversion slower and eventually fail."""
+    proc = subprocess.Popen(
+        cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE, start_new_session=True,
     )
-    pdfs = glob.glob(os.path.join(outdir, "*.pdf"))
-    if not pdfs:
-        raise RuntimeError(
-            (p.stderr.decode() or p.stdout.decode() or "libreoffice produced no pdf")[:300]
-        )
-    return pdfs[0]
+    try:
+        out, err = proc.communicate(timeout=timeout)
+    except subprocess.TimeoutExpired:
+        try:
+            os.killpg(proc.pid, signal.SIGKILL)
+        except ProcessLookupError:
+            pass
+        proc.communicate()
+        raise
+    return proc.returncode, out, err
+
+
+def _clean_lo_output(raw: bytes | str) -> str:
+    """Drop LibreOffice's harmless 'javaldx' warning so the real error shows."""
+    text = raw.decode(errors="ignore") if isinstance(raw, bytes) else raw
+    lines = [ln for ln in text.splitlines() if ln.strip() and "javaldx" not in ln]
+    return "\n".join(lines)[:300]
+
+
+def _pptx_to_pdf(pptx_path: str, outdir: str, timeout: int = 180) -> str:
+    """Headless LibreOffice: .pptx/.ppt -> .pdf. A per-call UserInstallation
+    profile keeps concurrent conversions from clashing and avoids needing $HOME.
+    Conversions run one at a time, and a failed first attempt is retried once
+    (LibreOffice occasionally exits without output on a cold start)."""
+    profile = os.path.join(outdir, "lo-profile")
+    cmd = [
+        "soffice", "--headless", "--norestore", "--invisible", "--nodefault",
+        f"-env:UserInstallation=file://{profile}",
+        "--convert-to", "pdf", "--outdir", outdir, pptx_path,
+    ]
+    last_err = ""
+    with _SOFFICE_LOCK:
+        for _attempt in (1, 2):
+            try:
+                _rc, out, err = _run_group(cmd, timeout)
+            except subprocess.TimeoutExpired:
+                raise RuntimeError(
+                    f"Converting the slides to PDF took longer than {timeout}s "
+                    "(deck is very large or the render server is busy)"
+                )
+            pdfs = glob.glob(os.path.join(outdir, "*.pdf"))
+            if pdfs:
+                return pdfs[0]
+            last_err = _clean_lo_output(err) or _clean_lo_output(out)
+    raise RuntimeError(last_err or "libreoffice produced no pdf")
 
 
 @app.post("/render-slides")
@@ -455,7 +496,7 @@ def _build_module(req: BuildModuleRequest) -> None:
         with tempfile.TemporaryDirectory() as d:
             pptx = os.path.join(d, "deck.pptx")
             _download(req.pptxUrl, pptx)
-            pdf = _pptx_to_pdf(pptx, d)
+            pdf = _pptx_to_pdf(pptx, d, timeout=600)
             prefix = os.path.join(d, "slide")
             p = subprocess.run(["pdftoppm", "-png", "-r", str(req.dpi), pdf, prefix],
                                stdout=subprocess.PIPE, stderr=subprocess.PIPE, timeout=180)
@@ -486,6 +527,18 @@ def _build_module(req: BuildModuleRequest) -> None:
             _sb_upsert(sb, key, "module_outputs", "module_id,format_type",
                        {"module_id": req.moduleId, "format_type": "slide_images",
                         "content": {"images": image_urls, "texts": texts}, "status": "completed"})
+
+            # Use slide 1 as the module thumbnail (only if it has none yet), so the
+            # upload flow doesn't need a second, separate render of the same deck.
+            try:
+                _http(
+                    "PATCH", f"{sb}/rest/v1/modules?id=eq.{req.moduleId}&thumbnail_url=is.null",
+                    {"apikey": key, "Authorization": f"Bearer {key}",
+                     "Content-Type": "application/json", "Prefer": "return=minimal"},
+                    json.dumps({"thumbnail_url": image_urls[0]}).encode(), timeout=30,
+                )
+            except Exception as e:
+                print(f"[{req.moduleId}] could not set thumbnail:", e)
 
             # Narration text per slide: clean speaker note wins; else Gemini from
             # slide text; else raw slide text.
