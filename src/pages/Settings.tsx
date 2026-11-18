@@ -348,6 +348,9 @@ export default function Settings() {
           <p className="text-muted-foreground mt-1">Manage your account and preferences</p>
         </div>
 
+        {!isAdmin ? (
+          <ProfileCard user={user} />
+        ) : (
         <Tabs defaultValue="integrations" className="space-y-6">
           <TabsList className="grid w-full grid-cols-4">
             <TabsTrigger value="profile" className="flex items-center gap-2">
@@ -370,21 +373,7 @@ export default function Settings() {
 
           {/* Profile Tab */}
           <TabsContent value="profile">
-            <Card>
-              <CardHeader>
-                <CardTitle>Profile Settings</CardTitle>
-                <CardDescription>Manage your profile information</CardDescription>
-              </CardHeader>
-              <CardContent className="space-y-4">
-                <div className="space-y-2">
-                  <Label>Email</Label>
-                  <Input value={user?.email || ""} disabled className="bg-muted" />
-                </div>
-                <p className="text-sm text-muted-foreground">
-                  Profile settings are managed through your authentication provider.
-                </p>
-              </CardContent>
-            </Card>
+            <ProfileCard user={user} />
           </TabsContent>
 
           {/* Security Tab */}
@@ -1057,8 +1046,62 @@ export default function Settings() {
             </Card>
           </TabsContent>
         </Tabs>
+        )}
         </main>
       </div>
     </AppSidebar>
+  );
+}
+
+function ProfileCard({ user }: { user: ReturnType<typeof useAuth>["user"] }) {
+  const original = (user?.user_metadata?.full_name as string | undefined) || "";
+  const [name, setName] = useState(original);
+  const [saving, setSaving] = useState(false);
+
+  useEffect(() => setName(original), [original]);
+
+  const trimmed = name.trim();
+  const dirty = trimmed !== original.trim() && trimmed.length > 0;
+
+  const save = async () => {
+    if (!user || !dirty) return;
+    setSaving(true);
+    try {
+      const { error: profileError } = await supabase
+        .from("profiles")
+        .update({ full_name: trimmed })
+        .eq("id", user.id);
+      if (profileError) throw profileError;
+      const { error: authError } = await supabase.auth.updateUser({ data: { full_name: trimmed } });
+      if (authError) throw authError;
+      toast.success("Name updated");
+    } catch (e) {
+      toast.error("Could not update name: " + (e instanceof Error ? e.message : "unknown error"));
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  return (
+    <Card>
+      <CardHeader>
+        <CardTitle>Profile</CardTitle>
+        <CardDescription>You can change your name. Other details are managed by your administrator.</CardDescription>
+      </CardHeader>
+      <CardContent className="space-y-4">
+        <div className="space-y-2">
+          <Label htmlFor="profile-name">Name</Label>
+          <Input id="profile-name" value={name} maxLength={100} onChange={(e) => setName(e.target.value)} />
+        </div>
+        <div className="space-y-2">
+          <Label>Email</Label>
+          <Input value={user?.email || ""} disabled className="bg-muted" />
+        </div>
+        <Button onClick={save} disabled={!dirty || saving}>
+          {saving && <Loader2 className="h-4 w-4 mr-2 animate-spin" />}
+          Save name
+        </Button>
+      </CardContent>
+    </Card>
   );
 }
