@@ -8,7 +8,7 @@ import { useModuleQuizzes } from "@/hooks/useModuleQuizzes";
 import { useCourseProgress } from "@/hooks/useCourseProgress";
 import { useModuleAssignments } from "@/hooks/useModuleAssignments";
 import { useMyModuleAssignmentSubmissions } from "@/hooks/useModuleAssignmentSubmissions";
-import { selectShuffledQuizQuestions } from "@/lib/quizShuffle";
+import { selectShuffledQuizQuestions, extractQuestionsToShow } from "@/lib/quizShuffle";
 import QuizModuleDisplay from "@/components/QuizModuleDisplay";
 import { toast } from "sonner";
 import { Trophy } from "lucide-react";
@@ -80,10 +80,18 @@ export default function ModuleQuizPage() {
   const effectiveTitle = quizData?.module_name || moduleData?.title || moduleTitle;
 
   const rawQuizSettings = quizData?.settings || (moduleData?.quiz_data as Record<string, any> | null)?.settings;
-  // eslint-disable-next-line react-hooks/exhaustive-deps
+  const questionsToShow: number | undefined =
+    rawQuizSettings?.questionsToShow ?? extractQuestionsToShow(moduleData);
+
+  // Shuffle once the questions have actually loaded. This must depend on the
+  // loaded questions (not just moduleId): on first render the quiz query is
+  // still empty, and a [moduleId]-only memo kept that empty list forever, so
+  // learners saw "No questions in this quiz". `questions` keeps the same
+  // reference across re-renders/refetches of unchanged data, so the order is
+  // not re-shuffled while a learner is taking the quiz.
   const shuffledQuestions = useMemo(
-    () => selectShuffledQuizQuestions(questions, rawQuizSettings?.questionsToShow),
-    [moduleId]
+    () => selectShuffledQuizQuestions(questions, questionsToShow),
+    [questions, questionsToShow]
   );
 
   const { data: assignments } = useModuleAssignments(moduleId);
