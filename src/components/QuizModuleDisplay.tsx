@@ -68,7 +68,7 @@ export default function QuizModuleDisplay({
     points: q.points ?? 1,
   }));
 
-  const { addXPAsync, updateStreak } = useGamification();
+  const { addXPAsync, updateStreak, awardBadgeByName } = useGamification();
 
   // Auto-submit when time is up
   useEffect(() => {
@@ -84,7 +84,11 @@ export default function QuizModuleDisplay({
     const score = calculateScore();
     const passed = score.percentage >= passingScore;
     const isFirstAttempt = isFirstAttemptRef.current;
-    
+
+    if (passed && score.percentage >= 100) {
+      awardBadgeByName("Perfect Score");
+    }
+
     // Award XP for first attempt pass
     if (passed && isFirstAttempt) {
       try {

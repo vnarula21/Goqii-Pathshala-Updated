@@ -41,7 +41,7 @@ interface UserBadge {
 }
 
 // XP required for each level
-const LEVEL_XP_REQUIREMENTS = [
+export const LEVEL_XP_REQUIREMENTS = [
   0,    // Level 1: 0 XP
   100,  // Level 2: 100 XP
   300,  // Level 3: 300 XP
@@ -60,8 +60,8 @@ export function calculateLevel(totalXP: number): number {
 
 export function getXPForNextLevel(currentLevel: number): number {
   if (currentLevel >= LEVEL_XP_REQUIREMENTS.length) {
-    // After level 5, each level requires 500 more XP
-    return LEVEL_XP_REQUIREMENTS[LEVEL_XP_REQUIREMENTS.length - 1] + (currentLevel - LEVEL_XP_REQUIREMENTS.length + 1) * 500;
+    // Top level reached (calculateLevel never goes above it)
+    return LEVEL_XP_REQUIREMENTS[LEVEL_XP_REQUIREMENTS.length - 1];
   }
   return LEVEL_XP_REQUIREMENTS[currentLevel] || LEVEL_XP_REQUIREMENTS[LEVEL_XP_REQUIREMENTS.length - 1];
 }
@@ -71,6 +71,8 @@ export function getLevelTitle(level: number): string {
   if (level <= titles.length) return titles[level - 1];
   return `Legend ${level - titles.length}`;
 }
+
+const syncingUsers = new Set<string>();
 
 export function useGamification() {
   const { user } = useAuth();
@@ -408,9 +410,77 @@ export function useGamification() {
     ? LEVEL_XP_REQUIREMENTS[currentLevel - 1] 
     : LEVEL_XP_REQUIREMENTS[LEVEL_XP_REQUIREMENTS.length - 1] + (currentLevel - LEVEL_XP_REQUIREMENTS.length) * 500;
   const xpForNextLevel = getXPForNextLevel(currentLevel);
-  const xpProgress = xpForNextLevel > xpForCurrentLevel 
-    ? ((currentXP - xpForCurrentLevel) / (xpForNextLevel - xpForCurrentLevel)) * 100 
+  const isMaxLevel = currentLevel >= LEVEL_XP_REQUIREMENTS.length;
+  const xpProgress = !isMaxLevel && xpForNextLevel > xpForCurrentLevel
+    ? ((currentXP - xpForCurrentLevel) / (xpForNextLevel - xpForCurrentLevel)) * 100
     : 100;
+
+  const awardBadgeByName = async (name: string) => {
+    const badge = allBadges.find((b) => b.name === name);
+    if (!badge || userBadges.some((ub) => ub.badge_id === badge.id)) return;
+    try {
+      await awardBadge.mutateAsync(badge.id);
+    } catch (e) {
+      console.error("Failed to award badge:", e);
+    }
+  };
+
+  // Awards every badge the learner already qualifies for, based on their saved
+  // history (streaks, completed courses, early completions, graded assignments).
+  // Safe to call repeatedly: badges already earned are skipped.
+  const syncBadges = async () => {
+    if (!user || allBadges.length === 0) return;
+    const key = user.id;
+    if (syncingUsers.has(key)) return;
+    const earned = new Set(userBadges.map((ub) => ub.badge_id));
+    const pending = allBadges.filter((b) => !earned.has(b.id));
+    if (pending.length === 0) return;
+    syncingUsers.add(key);
+    try {
+      const types = new Set(pending.map((b) => b.criteria?.type));
+      let coursesCompleted = 0;
+      let earlyCompletions = 0;
+      let bestAssignmentPct = 0;
+
+      if (types.has("courses_completed") || types.has("early_completion")) {
+        const [{ data: done }, { data: assigned }] = await Promise.all([
+          supabase.from("course_progress").select("course_id, completed_at").eq("user_id", user.id).eq("is_completed", true),
+          supabase.from("course_assignments").select("course_id, due_date").eq("user_id", user.id),
+        ]);
+        coursesCompleted = done?.length || 0;
+        const due = new Map((assigned || []).map((a) => [a.course_id, a.due_date]));
+        earlyCompletions = (done || []).filter((d) => {
+          const dd = due.get(d.course_id);
+          return dd && d.completed_at && new Date(d.completed_at) <= new Date(dd);
+        }).length;
+      }
+      if (types.has("high_score_assignment")) {
+        const { data: subs } = await supabase
+          .from("assessment_submissions")
+          .select("score, max_score")
+          .eq("user_id", user.id)
+          .not("score", "is", null);
+        for (const s of subs || []) {
+          if (s.max_score > 0) bestAssignmentPct = Math.max(bestAssignmentPct, ((s.score as number) / s.max_score) * 100);
+        }
+      }
+
+      const longestStreak = userStreak?.longest_streak || 0;
+      for (const b of pending) {
+        const c = b.criteria || {};
+        let qualifies = false;
+        switch (c.type) {
+          case "streak_days": qualifies = longestStreak >= c.value; break;
+          case "courses_completed": qualifies = coursesCompleted >= c.value; break;
+          case "early_completion": qualifies = earlyCompletions >= c.value; break;
+          case "high_score_assignment": qualifies = bestAssignmentPct >= c.value; break;
+        }
+        if (qualifies) await awardBadge.mutateAsync(b.id).catch((e) => console.error("Badge sync failed:", e));
+      }
+    } finally {
+      syncingUsers.delete(key);
+    }
+  };
 
   return {
     userXP,
@@ -425,6 +495,8 @@ export function useGamification() {
     currentLevel,
     levelTitle: getLevelTitle(currentLevel),
     xpProgress,
-    xpToNextLevel: xpForNextLevel - currentXP,
+    xpToNextLevel: isMaxLevel ? 0 : xpForNextLevel - currentXP,
+    awardBadgeByName,
+    syncBadges,
   };
 }

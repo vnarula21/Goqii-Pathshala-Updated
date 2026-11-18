@@ -16,6 +16,7 @@ import ModuleQuizPage from "./pages/ModuleQuizPage";
 import ModuleAssignmentsPage from "./pages/ModuleAssignmentsPage";
 import NotFound from "./pages/NotFound";
 import { RoleGuard } from "./components/RoleGuard";
+import LearnerAchievements from "./pages/LearnerAchievements";
 import LearnerDashboard from "./pages/LearnerDashboard";
 import ManagerDashboard from "./pages/ManagerDashboard";
 import ManagerModuleBrowser from "./pages/ManagerModuleBrowser";
@@ -70,6 +71,11 @@ const App = () => (
           <Route path="/learner/courses" element={
             <RoleGuard allowedRoles={["learner"]}>
               <Courses />
+            </RoleGuard>
+          } />
+          <Route path="/learner/achievements" element={
+            <RoleGuard allowedRoles={["learner"]}>
+              <LearnerAchievements />
             </RoleGuard>
           } />
           <Route path="/learner/certificates" element={

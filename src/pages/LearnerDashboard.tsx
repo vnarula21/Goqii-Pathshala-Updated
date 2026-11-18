@@ -9,7 +9,7 @@ import { AssignmentCard, AssignmentStatus } from "@/components/AssignmentCard";
 import { RecentActivityTimeline, ActivityItem } from "@/components/RecentActivityTimeline";
 import { useMySubmissions, usePendingAssessments } from "@/hooks/useAssessmentSubmissions";
 import { usePendingModuleAssignments } from "@/hooks/useModuleAssignmentSubmissions";
-import { useNavigate } from "react-router-dom";
+import { useNavigate, Link } from "react-router-dom";
 import { useGamification } from "@/hooks/useGamification";
 import { XPMeter, StreakBadge, BadgeShowcase, Leaderboard } from "@/components/gamification";
 import { PieChartCard, PieChartData } from "@/components/PieChartCard";
@@ -61,7 +61,8 @@ export default function LearnerDashboard() {
     levelTitle,
     xpProgress,
     xpToNextLevel,
-    updateStreak
+    updateStreak,
+    syncBadges
   } = useGamification();
   
   const [courses, setCourses] = useState<CourseWithProgress[]>([]);
@@ -73,6 +74,12 @@ export default function LearnerDashboard() {
       updateStreak();
     }
   }, [user]);
+
+  // Award any badges the learner has already qualified for.
+  useEffect(() => {
+    if (!gamificationLoading && allBadges.length > 0) syncBadges();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [gamificationLoading, allBadges.length, userBadges?.length]);
 
   useEffect(() => {
     if (!user) return;
@@ -241,7 +248,11 @@ export default function LearnerDashboard() {
             </div>
 
             {/* Gamification Stats - Compact */}
-            <div className="flex items-center gap-4">
+            <Link
+              to="/learner/achievements"
+              title="See how to earn XP and rewards"
+              className="flex items-center gap-4 rounded-lg p-2 -m-2 hover:bg-muted/50 transition-colors"
+            >
               {userStreak && (
                 <StreakBadge
                   currentStreak={userStreak.current_streak}
@@ -258,7 +269,7 @@ export default function LearnerDashboard() {
                 xpToNextLevel={xpToNextLevel}
                 size="sm"
               />
-            </div>
+            </Link>
           </div>
         </div>
 
@@ -542,6 +553,9 @@ export default function LearnerDashboard() {
                     <Trophy className="h-4 w-4 text-amber-500" />
                   </div>
                   <CardTitle className="text-sm font-medium">Achievements</CardTitle>
+                  <Link to="/learner/achievements" className="ml-auto text-xs text-primary hover:underline">
+                    How to earn →
+                  </Link>
                 </div>
               </CardHeader>
               <CardContent className="px-3 pb-3">
@@ -550,6 +564,12 @@ export default function LearnerDashboard() {
                   userBadges={userBadges}
                   maxDisplay={4}
                 />
+                <Link
+                  to="/learner/achievements"
+                  className="mt-3 block text-center text-xs text-primary hover:underline"
+                >
+                  See how to earn XP, badges &amp; rewards
+                </Link>
               </CardContent>
             </Card>
 

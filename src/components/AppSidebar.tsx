@@ -26,7 +26,8 @@ import {
   Plus,
   FolderOpen,
   Building2,
-  Award
+  Award,
+  Trophy
 } from "lucide-react";
 
 interface NavItem {
@@ -89,6 +90,7 @@ export function AppSidebar({ children }: AppSidebarProps) {
       return [
         { path: "/learner", label: "Dashboard", icon: LayoutDashboard },
         { path: "/learner/courses", label: "My Courses", icon: GraduationCap },
+        { path: "/learner/achievements", label: "Achievements", icon: Trophy },
         { path: "/learner/certificates", label: "Certificates", icon: Award },
       ];
     }
