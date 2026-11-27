@@ -1,5 +1,6 @@
 import { useState } from "react";
 import { AppSidebar } from "@/components/AppSidebar";
+import { useAuth } from "@/hooks/useAuth";
 import { useLearners } from "@/hooks/useLearners";
 import { useLevels } from "@/hooks/useLevels";
 import { useUsers } from "@/hooks/useUsers";
@@ -36,9 +37,76 @@ export default function UserManagement() {
   const { isAdmin } = useUserRole();
   const { learners, isLoading, toggleActive } = useLearners();
   const { levels } = useLevels();
-  const { createUser, deleteUser, bulkCreateUsers, updateUserProfile, toggleUserActive, updateUserOrganizations } = useUsers();
+  const { createUser, deleteUser, bulkDeleteUsers, bulkCreateUsers, updateUserProfile, toggleUserActive, updateUserOrganizations } = useUsers();
   const [learnerToDelete, setLearnerToDelete] = useState<{ id: string; name: string } | null>(null);
   const [bulkAddOpen, setBulkAddOpen] = useState(false);
+  const { user: currentUser } = useAuth();
+
+  // Row selection for bulk delete, kept separately for each list/tab.
+  const [selection, setSelection] = useState<Record<string, string[]>>({});
+  const [bulkDelete, setBulkDelete] = useState<{ scope: string; users: { id: string; name: string }[] } | null>(null);
+  const selectedIn = (scope: string) => selection[scope] ?? [];
+  const toggleOne = (scope: string, id: string) =>
+    setSelection((prev) => {
+      const cur = prev[scope] ?? [];
+      return { ...prev, [scope]: cur.includes(id) ? cur.filter((x) => x !== id) : [...cur, id] };
+    });
+  const toggleAll = (scope: string, ids: string[]) =>
+    setSelection((prev) => {
+      const cur = prev[scope] ?? [];
+      const all = ids.length > 0 && ids.every((id) => cur.includes(id));
+      return { ...prev, [scope]: all ? cur.filter((id) => !ids.includes(id)) : Array.from(new Set([...cur, ...ids])) };
+    });
+  const clearSelection = (scope: string) => setSelection((prev) => ({ ...prev, [scope]: [] }));
+  const allSelected = (scope: string, ids: string[]) =>
+    ids.length > 0 && ids.every((id) => selectedIn(scope).includes(id));
+  const someSelected = (scope: string, ids: string[]) =>
+    ids.some((id) => selectedIn(scope).includes(id)) && !allSelected(scope, ids);
+
+  const headCheckbox = (scope: string, ids: string[]) => (
+    <TableHead className="w-10">
+      <Checkbox
+        aria-label="Select all"
+        checked={allSelected(scope, ids) ? true : someSelected(scope, ids) ? "indeterminate" : false}
+        onCheckedChange={() => toggleAll(scope, ids)}
+      />
+    </TableHead>
+  );
+  const rowCheckbox = (scope: string, id: string, disabled = false) => (
+    <TableCell className="w-10">
+      <Checkbox
+        aria-label="Select row"
+        disabled={disabled}
+        checked={selectedIn(scope).includes(id)}
+        onCheckedChange={() => toggleOne(scope, id)}
+      />
+    </TableCell>
+  );
+  const bulkBar = (scope: string, rows: { id: string; full_name: string | null; email: string }[]) => {
+    const ids = selectedIn(scope).filter((id) => rows.some((r) => r.id === id));
+    if (ids.length === 0) return null;
+    return (
+      <div className="flex items-center justify-between rounded-md border bg-muted/50 px-3 py-2 mb-3">
+        <span className="text-sm font-medium">{ids.length} selected</span>
+        <div className="flex items-center gap-2">
+          <Button variant="ghost" size="sm" onClick={() => clearSelection(scope)}>Clear</Button>
+          <Button
+            variant="destructive"
+            size="sm"
+            disabled={bulkDeleteUsers.isPending}
+            onClick={() =>
+              setBulkDelete({
+                scope,
+                users: rows.filter((r) => ids.includes(r.id)).map((r) => ({ id: r.id, name: r.full_name || r.email })),
+              })
+            }
+          >
+            <Trash2 className="h-4 w-4 mr-1" /> Delete selected
+          </Button>
+        </div>
+      </div>
+    );
+  };
   const { users: managers, isLoading: managersLoading } = useUsersByRole("manager");
   const { users: smes, isLoading: smesLoading } = useUsersByRole("sme");
   const { users: smeExperts, isLoading: smeExpertsLoading } = useUsersByRole("sme_expert");
@@ -395,9 +463,12 @@ export default function UserManagement() {
                       No managers found. Create a manager using the "Create User" button above.
                     </div>
                   ) : (
+                    <>
+                    {bulkBar("managers", managers)}
                     <Table>
                       <TableHeader>
                         <TableRow>
+                          {headCheckbox("managers", managers.filter((u) => u.id !== currentUser?.id).map((u) => u.id))}
                           <TableHead>Name</TableHead>
                           <TableHead>Email</TableHead>
                           <TableHead>Organization</TableHead>
@@ -410,6 +481,7 @@ export default function UserManagement() {
                       <TableBody>
                         {managers.map((manager) => (
                           <TableRow key={manager.id}>
+                            {rowCheckbox("managers", manager.id, manager.id === currentUser?.id)}
                             <TableCell className="font-medium">
                               {manager.full_name || "—"}
                             </TableCell>
@@ -490,6 +562,7 @@ export default function UserManagement() {
                         ))}
                       </TableBody>
                     </Table>
+                    </>
                   )}
                 </CardContent>
               </Card>
@@ -513,9 +586,12 @@ export default function UserManagement() {
                       No Module Designers found. Create a Module Designer using the "Create User" button above.
                     </div>
                   ) : (
+                    <>
+                    {bulkBar("smes", smes)}
                     <Table>
                       <TableHeader>
                         <TableRow>
+                          {headCheckbox("smes", smes.filter((u) => u.id !== currentUser?.id).map((u) => u.id))}
                           <TableHead>Name</TableHead>
                           <TableHead>Email</TableHead>
                           <TableHead>Organization</TableHead>
@@ -528,6 +604,7 @@ export default function UserManagement() {
                       <TableBody>
                         {smes.map((sme) => (
                           <TableRow key={sme.id}>
+                            {rowCheckbox("smes", sme.id, sme.id === currentUser?.id)}
                             <TableCell className="font-medium">
                               {sme.full_name || "—"}
                             </TableCell>
@@ -608,6 +685,7 @@ export default function UserManagement() {
                         ))}
                       </TableBody>
                     </Table>
+                    </>
                   )}
                 </CardContent>
               </Card>
@@ -631,9 +709,12 @@ export default function UserManagement() {
                       No SMEs found. Create an SME using the "Create User" button above.
                     </div>
                   ) : (
+                    <>
+                    {bulkBar("sme_experts", smeExperts)}
                     <Table>
                       <TableHeader>
                         <TableRow>
+                          {headCheckbox("sme_experts", smeExperts.filter((u) => u.id !== currentUser?.id).map((u) => u.id))}
                           <TableHead>Name</TableHead>
                           <TableHead>Email</TableHead>
                           <TableHead>Organization</TableHead>
@@ -646,6 +727,7 @@ export default function UserManagement() {
                       <TableBody>
                         {smeExperts.map((expert) => (
                           <TableRow key={expert.id}>
+                            {rowCheckbox("sme_experts", expert.id, expert.id === currentUser?.id)}
                             <TableCell className="font-medium">
                               {expert.full_name || "—"}
                             </TableCell>
@@ -726,6 +808,7 @@ export default function UserManagement() {
                         ))}
                       </TableBody>
                     </Table>
+                    </>
                   )}
                 </CardContent>
               </Card>
@@ -749,9 +832,12 @@ export default function UserManagement() {
                       No admins found.
                     </div>
                   ) : (
+                    <>
+                    {bulkBar("admins", admins)}
                     <Table>
                       <TableHeader>
                         <TableRow>
+                          {headCheckbox("admins", admins.filter((u) => u.id !== currentUser?.id).map((u) => u.id))}
                           <TableHead>Name</TableHead>
                           <TableHead>Email</TableHead>
                           <TableHead>Organization</TableHead>
@@ -764,6 +850,7 @@ export default function UserManagement() {
                       <TableBody>
                         {admins.map((admin) => (
                           <TableRow key={admin.id}>
+                            {rowCheckbox("admins", admin.id, admin.id === currentUser?.id)}
                             <TableCell className="font-medium">
                               {admin.full_name || "—"}
                             </TableCell>
@@ -844,6 +931,7 @@ export default function UserManagement() {
                         ))}
                       </TableBody>
                     </Table>
+                    </>
                   )}
                 </CardContent>
               </Card>
@@ -875,9 +963,11 @@ export default function UserManagement() {
               </div>
             </CardHeader>
             <CardContent>
+              {bulkBar("learners", filteredLearners)}
               <Table>
                 <TableHeader>
                   <TableRow>
+                    {headCheckbox("learners", filteredLearners.map((l) => l.id))}
                     <TableHead>Name</TableHead>
                     <TableHead>Email</TableHead>
                     <TableHead>Status</TableHead>
@@ -887,6 +977,7 @@ export default function UserManagement() {
                 <TableBody>
                   {filteredLearners.map((learner) => (
                     <TableRow key={learner.id}>
+                      {rowCheckbox("learners", learner.id)}
                       <TableCell className="font-medium">
                         {learner.full_name || "—"}
                       </TableCell>
@@ -950,6 +1041,47 @@ export default function UserManagement() {
                 }}
               >
                 Delete
+              </AlertDialogAction>
+            </AlertDialogFooter>
+          </AlertDialogContent>
+        </AlertDialog>
+
+        <AlertDialog open={!!bulkDelete} onOpenChange={(o) => !o && setBulkDelete(null)}>
+          <AlertDialogContent>
+            <AlertDialogHeader>
+              <AlertDialogTitle>
+                Delete {bulkDelete?.users.length} user{bulkDelete?.users.length === 1 ? "" : "s"}?
+              </AlertDialogTitle>
+              <AlertDialogDescription asChild>
+                <div className="space-y-2">
+                  <p>
+                    This permanently deletes these accounts, including their progress, submissions and certificates.
+                    This cannot be undone.
+                  </p>
+                  <ul className="list-disc pl-5 text-sm max-h-40 overflow-y-auto">
+                    {bulkDelete?.users.slice(0, 10).map((u) => (
+                      <li key={u.id}>{u.name}</li>
+                    ))}
+                    {(bulkDelete?.users.length ?? 0) > 10 && <li>…and {(bulkDelete?.users.length ?? 0) - 10} more</li>}
+                  </ul>
+                </div>
+              </AlertDialogDescription>
+            </AlertDialogHeader>
+            <AlertDialogFooter>
+              <AlertDialogCancel>Cancel</AlertDialogCancel>
+              <AlertDialogAction
+                className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+                onClick={() => {
+                  if (!bulkDelete) return;
+                  const { scope, users } = bulkDelete;
+                  bulkDeleteUsers.mutate(
+                    { userIds: users.map((u) => u.id) },
+                    { onSettled: () => clearSelection(scope) }
+                  );
+                  setBulkDelete(null);
+                }}
+              >
+                Delete {bulkDelete?.users.length}
               </AlertDialogAction>
             </AlertDialogFooter>
           </AlertDialogContent>

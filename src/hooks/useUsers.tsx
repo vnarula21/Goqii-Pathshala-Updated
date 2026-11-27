@@ -198,6 +198,46 @@ export function useUsers() {
     },
   });
 
+  // Deletes several users via the same server-side checks as single delete.
+  // Runs a few at a time and reports how many succeeded / failed.
+  const bulkDeleteUsers = useMutation({
+    mutationFn: async ({ userIds }: { userIds: string[] }) => {
+      const failed: { id: string; error: string }[] = [];
+      let deleted = 0;
+      const queue = [...userIds];
+      const worker = async () => {
+        while (queue.length > 0) {
+          const id = queue.shift()!;
+          try {
+            const { data, error } = await supabase.functions.invoke("delete-user", {
+              body: { targetUserId: id },
+            });
+            if (error) throw new Error(error.message || "Failed to delete user");
+            if (data?.error) throw new Error(data.error);
+            deleted++;
+          } catch (e) {
+            failed.push({ id, error: e instanceof Error ? e.message : "Unknown error" });
+          }
+        }
+      };
+      await Promise.all(Array.from({ length: Math.min(4, userIds.length) }, worker));
+      return { deleted, failed };
+    },
+    onSuccess: ({ deleted, failed }) => {
+      queryClient.invalidateQueries({ queryKey: ["users-by-role"] });
+      queryClient.invalidateQueries({ queryKey: ["learners"] });
+      queryClient.invalidateQueries({ queryKey: ["managers"] });
+      if (failed.length === 0) {
+        toast.success(`${deleted} user${deleted === 1 ? "" : "s"} deleted`);
+      } else {
+        toast.error(`${deleted} deleted, ${failed.length} failed: ${failed[0].error}`);
+      }
+    },
+    onError: (error) => {
+      toast.error("Failed to delete users: " + error.message);
+    },
+  });
+
   const updateUserOrganizations = useMutation({
     mutationFn: async ({
       userId,
@@ -243,6 +283,7 @@ export function useUsers() {
   return {
     createUser,
     deleteUser,
+    bulkDeleteUsers,
     bulkCreateUsers,
     updateUserProfile,
     toggleUserActive,
