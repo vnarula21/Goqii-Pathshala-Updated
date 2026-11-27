@@ -11,6 +11,7 @@ import {
 } from "@/components/ui/dialog";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Loader2, Download, Upload } from "lucide-react";
+import { parseLearnerText, SkippedRow } from "@/lib/parseLearnerCsv";
 
 interface ParsedLearner {
   fullName: string;
@@ -45,6 +46,7 @@ export function BulkAddLearnersDialog({ open, onOpenChange, onSubmit, isSubmitti
   const [rawInput, setRawInput] = useState("");
   const [preview, setPreview] = useState<ParsedLearner[]>([]);
   const [parseError, setParseError] = useState<string | null>(null);
+  const [skipped, setSkipped] = useState<SkippedRow[]>([]);
   const [submitted, setSubmitted] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
@@ -55,18 +57,10 @@ export function BulkAddLearnersDialog({ open, onOpenChange, onSubmit, isSubmitti
     const reader = new FileReader();
     reader.onload = (event) => {
       const text = event.target?.result as string;
-      const lines = text.split("\n").map((l) => l.trim()).filter((l) => l.length > 0);
+      const { rows } = parseLearnerText(text);
 
-      // If the first line looks like a header row (e.g. "Full Name,Email" or
-      // "name,email"), skip it - it's not an actual learner to create.
-      const looksLikeHeader = lines[0] && /name/i.test(lines[0]) && /email/i.test(lines[0]);
-      const dataLines = looksLikeHeader ? lines.slice(1) : lines;
-
-      // Keep only the first two comma-separated columns (name, email), in
-      // case the CSV has extra columns we don't need.
-      const cleaned = dataLines
-        .map((line) => line.split(",").slice(0, 2).map((p) => p.trim()).join(", "))
-        .join("\n");
+      // Show the cleaned list as "Name, Email" lines so it can be reviewed and edited.
+      const cleaned = rows.map((r) => `${r.fullName.replace(/,/g, " ")}, ${r.email}`).join("\n");
 
       setRawInput(cleaned);
       setParseError(null);
@@ -82,34 +76,24 @@ export function BulkAddLearnersDialog({ open, onOpenChange, onSubmit, isSubmitti
 
   const handleParse = () => {
     setParseError(null);
-    const lines = rawInput.split("\n").map((l) => l.trim()).filter((l) => l.length > 0);
+    const { rows, skipped: bad } = parseLearnerText(rawInput);
 
-    if (lines.length === 0) {
-      setParseError("Please paste at least one learner (Full Name, Email per line)");
+    if (rows.length === 0) {
+      setParseError(
+        bad.length > 0
+          ? `No valid learners found. First problem: line ${bad[0].line} (${bad[0].reason}): "${bad[0].text}"`
+          : "Please add at least one learner (Full Name, Email per line)"
+      );
       return;
     }
 
-    if (lines.length > 500) {
+    if (rows.length > 500) {
       setParseError("Maximum 500 learners per upload");
       return;
     }
 
-    const parsed: ParsedLearner[] = [];
-    for (const line of lines) {
-      const parts = line.split(",").map((p) => p.trim());
-      if (parts.length < 2 || !parts[0] || !parts[1]) {
-        setParseError(`Invalid line (expected "Full Name, Email"): "${line}"`);
-        return;
-      }
-      const [fullName, email] = parts;
-      if (!email.includes("@")) {
-        setParseError(`Invalid email in line: "${line}"`);
-        return;
-      }
-      parsed.push({ fullName, email, password: generateTempPassword() });
-    }
-
-    setPreview(parsed);
+    setSkipped(bad);
+    setPreview(rows.map((r) => ({ ...r, password: generateTempPassword() })));
   };
 
   const handleConfirm = () => {
@@ -120,6 +104,7 @@ export function BulkAddLearnersDialog({ open, onOpenChange, onSubmit, isSubmitti
   const handleClose = () => {
     setRawInput("");
     setPreview([]);
+    setSkipped([]);
     setParseError(null);
     setSubmitted(false);
     onOpenChange(false);
@@ -183,6 +168,16 @@ export function BulkAddLearnersDialog({ open, onOpenChange, onSubmit, isSubmitti
             <p className="text-sm text-muted-foreground">
               {preview.length} learner{preview.length !== 1 ? "s" : ""} ready to create. A temporary password will be generated and emailed to each learner — they'll be asked to change it on first login.
             </p>
+            {skipped.length > 0 && (
+              <div className="rounded-md border border-amber-300 bg-amber-50 dark:bg-amber-950/30 p-2 text-xs">
+                <p className="font-medium">{skipped.length} row{skipped.length !== 1 ? "s" : ""} skipped:</p>
+                <ul className="list-disc pl-4 max-h-20 overflow-y-auto">
+                  {skipped.map((r, i) => (
+                    <li key={i}>Line {r.line}: {r.reason} - {r.text.slice(0, 60)}</li>
+                  ))}
+                </ul>
+              </div>
+            )}
             <div className="max-h-64 overflow-y-auto border rounded-md">
               <Table>
                 <TableHeader>
