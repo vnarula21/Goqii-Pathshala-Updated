@@ -2,7 +2,8 @@ import { Link } from "react-router-dom";
 import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Progress } from "@/components/ui/progress";
-import { CheckCircle2, Play, RotateCcw, BookOpen, ChevronRight } from "lucide-react";
+import { CheckCircle2, Play, RotateCcw, BookOpen, ChevronRight, RefreshCw } from "lucide-react";
+import { addMonths, format } from "date-fns";
 import { cn } from "@/lib/utils";
 
 interface LearnerCourseCardProps {
@@ -13,6 +14,10 @@ interface LearnerCourseCardProps {
   progress: number;
   isCompleted: boolean;
   score?: number;
+  /** Retake interval set by the manager; null/undefined = no refresher. */
+  refresherMonths?: number | null;
+  completedAt?: string | null;
+  onRefresher?: () => void;
 }
 
 export function LearnerCourseCard({
@@ -23,7 +28,13 @@ export function LearnerCourseCard({
   progress,
   isCompleted,
   score,
+  refresherMonths,
+  completedAt,
+  onRefresher,
 }: LearnerCourseCardProps) {
+  const refresherDueAt =
+    isCompleted && refresherMonths && completedAt ? addMonths(new Date(completedAt), refresherMonths) : null;
+  const refresherDue = !!refresherDueAt && refresherDueAt.getTime() <= Date.now();
   const isInProgress = progress > 0 && !isCompleted;
   const isAvailable = progress === 0 && !isCompleted;
 
@@ -109,6 +120,34 @@ export function LearnerCourseCard({
             <Progress value={progress} className="h-1 mt-2" />
           )}
         </div>
+
+        {/* Refresher: faded until it is due, then highlighted and clickable */}
+        {refresherDueAt && (
+          <Button
+            variant={refresherDue ? "default" : "outline"}
+            size="sm"
+            className={cn(
+              "h-7 px-2.5 text-xs flex-shrink-0",
+              refresherDue
+                ? "bg-amber-500 hover:bg-amber-600 text-white animate-pulse"
+                : "opacity-40 blur-[0.6px] cursor-not-allowed"
+            )}
+            aria-disabled={!refresherDue}
+            title={
+              refresherDue
+                ? "Time to retake this course"
+                : `No refresher needed yet - next one opens on ${format(refresherDueAt, "d MMM yyyy")}`
+            }
+            onClick={(e) => {
+              e.preventDefault();
+              e.stopPropagation();
+              if (refresherDue) onRefresher?.();
+            }}
+          >
+            <RefreshCw className="h-3 w-3 mr-1" />
+            Refresher
+          </Button>
+        )}
 
         {/* Action Button */}
         <Button 

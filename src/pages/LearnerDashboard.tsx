@@ -9,6 +9,7 @@ import { AssignmentCard, AssignmentStatus } from "@/components/AssignmentCard";
 import { RecentActivityTimeline, ActivityItem } from "@/components/RecentActivityTimeline";
 import { useMySubmissions, usePendingAssessments } from "@/hooks/useAssessmentSubmissions";
 import { usePendingModuleAssignments } from "@/hooks/useModuleAssignmentSubmissions";
+import { toast } from "sonner";
 import { useNavigate, Link } from "react-router-dom";
 import { useGamification } from "@/hooks/useGamification";
 import { XPMeter, StreakBadge, BadgeShowcase, Leaderboard } from "@/components/gamification";
@@ -43,6 +44,8 @@ interface CourseWithProgress {
   thumbnail_url: string | null;
   progress: number;
   isCompleted: boolean;
+  completedAt?: string | null;
+  refresherMonths?: number | null;
 }
 
 export default function LearnerDashboard() {
@@ -97,13 +100,22 @@ export default function LearnerDashboard() {
           .select("*")
           .eq("user_id", user.id);
 
+        // Refresher settings live on the learner's assignment of each course
+        const { data: assignmentData } = await supabase
+          .from("course_assignments")
+          .select("course_id, refresher_months")
+          .eq("user_id", user.id);
+
         // Combine courses with progress
         const coursesWithProgress = (coursesData || []).map((course) => {
           const progress = progressData?.find((p) => p.course_id === course.id);
+          const assignment = assignmentData?.find((a) => a.course_id === course.id);
           return {
             ...course,
             progress: progress?.overall_score || 0,
             isCompleted: progress?.is_completed || false,
+            completedAt: progress?.completed_at ?? null,
+            refresherMonths: assignment?.refresher_months ?? null,
           };
         });
 
@@ -117,6 +129,15 @@ export default function LearnerDashboard() {
 
     fetchData();
   }, [user]);
+
+  const startRefresher = async (courseId: string) => {
+    const { error } = await supabase.rpc("start_course_refresher", { p_course_id: courseId });
+    if (error) {
+      toast.error(error.message || "Could not start the refresher");
+      return;
+    }
+    navigate(`/courses/${courseId}`);
+  };
 
   const pendingCourses = courses.filter((c) => !c.isCompleted && c.progress > 0);
   const completedCourses = courses.filter((c) => c.isCompleted);
@@ -444,6 +465,9 @@ export default function LearnerDashboard() {
                       progress={course.progress}
                       isCompleted={course.isCompleted}
                       score={course.progress}
+                      refresherMonths={course.refresherMonths}
+                      completedAt={course.completedAt}
+                      onRefresher={() => startRefresher(course.id)}
                     />
                   ))}
                 </div>

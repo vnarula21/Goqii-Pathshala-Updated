@@ -10,6 +10,8 @@ export interface CourseAssignment {
   assigned_by: string | null;
   assigned_at: string;
   due_date: string | null;
+  refresher_months: number | null;
+  refresher_notified_at: string | null;
 }
 
 export function useCourseAssignments() {
@@ -35,19 +37,29 @@ export function useCourseAssignments() {
       courseIds,
       learnerIds,
       dueDate,
+      refresherMonths,
     }: {
       courseIds: string[];
       learnerIds: string[];
       dueDate?: string;
+      /** How often the learner must retake the course after completing it (months). */
+      refresherMonths?: number | null;
     }) => {
+      // Never create a second assignment for a learner who already has the course.
+      const existing = new Set(assignments.map((a) => `${a.course_id}:${a.user_id}`));
       const assignmentsToCreate = courseIds.flatMap((courseId) =>
-        learnerIds.map((learnerId) => ({
-          course_id: courseId,
-          user_id: learnerId,
-          assigned_by: user?.id,
-          due_date: dueDate || null,
-        }))
+        learnerIds
+          .filter((learnerId) => !existing.has(`${courseId}:${learnerId}`))
+          .map((learnerId) => ({
+            course_id: courseId,
+            user_id: learnerId,
+            assigned_by: user?.id,
+            due_date: dueDate || null,
+            refresher_months: refresherMonths ?? null,
+          }))
       );
+
+      if (assignmentsToCreate.length === 0) return { count: 0 };
 
       const { error } = await supabase
         .from("course_assignments")
@@ -62,7 +74,8 @@ export function useCourseAssignments() {
     },
     onSuccess: (data) => {
       queryClient.invalidateQueries({ queryKey: ["course-assignments"] });
-      toast.success(`Successfully assigned ${data.count} course(s)`);
+      if (data.count === 0) toast.info("Everyone selected already has these courses");
+      else toast.success(`Successfully assigned ${data.count} course(s)`);
     },
     onError: (error) => {
       toast.error("Failed to assign courses: " + error.message);

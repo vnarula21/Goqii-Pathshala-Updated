@@ -38,3 +38,6 @@ verify_jwt = false
 
 [functions.request-password-reset]
 verify_jwt = false
+
+[functions.send-refresher-reminders]
+verify_jwt = false

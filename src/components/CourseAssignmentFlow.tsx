@@ -2,6 +2,8 @@ import { useMemo, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Input } from "@/components/ui/input";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { RefreshCw } from "lucide-react";
 import {
   Dialog,
   DialogContent,
@@ -35,7 +37,31 @@ export function CourseAssignmentFlow({ open, onOpenChange }: CourseAssignmentFlo
 
   const { allCourses, isLoading: coursesLoading } = useCourseLibrary();
   const { learners, isLoading: learnersLoading } = useLearners();
-  const { assignCourses, isAssigning } = useCourseAssignments();
+  const { assignments, assignCourses, isAssigning } = useCourseAssignments();
+  const [refresherChoice, setRefresherChoice] = useState<string>("none");
+  const [customMonths, setCustomMonths] = useState("");
+
+  const refresherMonths: number | null =
+    refresherChoice === "none"
+      ? null
+      : refresherChoice === "custom"
+        ? Math.max(1, Math.min(60, parseInt(customMonths, 10) || 0)) || null
+        : parseInt(refresherChoice, 10);
+
+  // How many of the selected courses each learner already has.
+  const assignedByLearner = useMemo(() => {
+    const m = new Map<string, Set<string>>();
+    for (const a of assignments) {
+      if (!m.has(a.user_id)) m.set(a.user_id, new Set());
+      m.get(a.user_id)!.add(a.course_id);
+    }
+    return m;
+  }, [assignments]);
+  const alreadyCount = (learnerId: string) =>
+    selectedCourseIds.filter((id) => assignedByLearner.get(learnerId)?.has(id)).length;
+  // Fully blocked: they already have every selected course.
+  const isBlocked = (learnerId: string) =>
+    selectedCourseIds.length > 0 && alreadyCount(learnerId) === selectedCourseIds.length;
 
   // Filter to only show published courses
   const publishedCourses = allCourses.filter((c) => c.is_published);
@@ -78,8 +104,11 @@ export function CourseAssignmentFlow({ open, onOpenChange }: CourseAssignmentFlo
   // and keeps anything already selected outside the current search.
   const allVisibleCoursesSelected =
     visibleCourses.length > 0 && visibleCourses.every((c) => selectedCourseIds.includes(c.id));
+  const selectableVisibleLearners = visibleLearners.filter((l) => !isBlocked(l.id));
+  const effectiveSelectedLearnerIds = selectedLearnerIds.filter((id) => !isBlocked(id));
   const allVisibleLearnersSelected =
-    visibleLearners.length > 0 && visibleLearners.every((l) => selectedLearnerIds.includes(l.id));
+    selectableVisibleLearners.length > 0 &&
+    selectableVisibleLearners.every((l) => selectedLearnerIds.includes(l.id));
 
   const handleSelectAllCourses = () => {
     const visibleIds = visibleCourses.map((c) => c.id);
@@ -91,7 +120,7 @@ export function CourseAssignmentFlow({ open, onOpenChange }: CourseAssignmentFlo
   };
 
   const handleSelectAllLearners = () => {
-    const visibleIds = visibleLearners.map((l) => l.id);
+    const visibleIds = selectableVisibleLearners.map((l) => l.id);
     setSelectedLearnerIds((prev) =>
       allVisibleLearnersSelected
         ? prev.filter((id) => !visibleIds.includes(id))
@@ -102,7 +131,8 @@ export function CourseAssignmentFlow({ open, onOpenChange }: CourseAssignmentFlo
   const handleAssign = async () => {
     await assignCourses({
       courseIds: selectedCourseIds,
-      learnerIds: selectedLearnerIds,
+      learnerIds: effectiveSelectedLearnerIds,
+      refresherMonths,
     });
     setStep("done");
   };
@@ -113,6 +143,8 @@ export function CourseAssignmentFlow({ open, onOpenChange }: CourseAssignmentFlo
     setSelectedLearnerIds([]);
     setCourseSearch("");
     setLearnerSearch("");
+    setRefresherChoice("none");
+    setCustomMonths("");
     onOpenChange(false);
   };
 
@@ -217,8 +249,8 @@ export function CourseAssignmentFlow({ open, onOpenChange }: CourseAssignmentFlo
                   onSearchChange={setLearnerSearch}
                   allSelected={allVisibleLearnersSelected}
                   onSelectAll={handleSelectAllLearners}
-                  visibleCount={visibleLearners.length}
-                  selectedCount={selectedLearnerIds.length}
+                  visibleCount={selectableVisibleLearners.length}
+                  selectedCount={effectiveSelectedLearnerIds.length}
                   noun="learner"
                 />
                 <div className="flex-1 min-h-0 overflow-y-auto px-6 py-4">
@@ -232,8 +264,11 @@ export function CourseAssignmentFlow({ open, onOpenChange }: CourseAssignmentFlo
                         <LearnerItem
                           key={learner.id}
                           learner={learner}
-                          selected={selectedLearnerIds.includes(learner.id)}
+                          selected={selectedLearnerIds.includes(learner.id) && !isBlocked(learner.id)}
                           onToggle={() => handleLearnerToggle(learner.id)}
+                          blocked={isBlocked(learner.id)}
+                          alreadyCount={alreadyCount(learner.id)}
+                          totalSelected={selectedCourseIds.length}
                         />
                       ))}
                     </div>
@@ -242,6 +277,40 @@ export function CourseAssignmentFlow({ open, onOpenChange }: CourseAssignmentFlo
               </>
             )}
 
+            <div className="flex flex-wrap items-center gap-3 border-t bg-muted/30 px-6 py-3">
+              <RefreshCw className="h-4 w-4 text-primary" />
+              <div className="text-sm">
+                <p className="font-medium">Refresher (optional)</p>
+                <p className="text-xs text-muted-foreground">
+                  Learners get a reminder to retake the course this long after they complete it.
+                </p>
+              </div>
+              <Select value={refresherChoice} onValueChange={setRefresherChoice}>
+                <SelectTrigger className="w-48">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="none">No refresher</SelectItem>
+                  <SelectItem value="3">Every 3 months</SelectItem>
+                  <SelectItem value="6">Every 6 months</SelectItem>
+                  <SelectItem value="12">Every 1 year</SelectItem>
+                  <SelectItem value="24">Every 2 years</SelectItem>
+                  <SelectItem value="custom">Custom (months)…</SelectItem>
+                </SelectContent>
+              </Select>
+              {refresherChoice === "custom" && (
+                <Input
+                  type="number"
+                  min={1}
+                  max={60}
+                  placeholder="Months"
+                  value={customMonths}
+                  onChange={(e) => setCustomMonths(e.target.value)}
+                  className="w-28"
+                />
+              )}
+            </div>
+
             <DialogFooter className="gap-2 border-t px-6 py-4">
               <Button variant="outline" onClick={() => setStep("courses")}>
                 <ChevronLeft className="mr-2 h-4 w-4" />
@@ -249,7 +318,7 @@ export function CourseAssignmentFlow({ open, onOpenChange }: CourseAssignmentFlo
               </Button>
               <Button
                 onClick={handleAssign}
-                disabled={selectedLearnerIds.length === 0 || isAssigning}
+                disabled={effectiveSelectedLearnerIds.length === 0 || isAssigning || (refresherChoice === "custom" && !refresherMonths)}
               >
                 {isAssigning ? (
                   <>
@@ -259,8 +328,8 @@ export function CourseAssignmentFlow({ open, onOpenChange }: CourseAssignmentFlo
                 ) : (
                   <>
                     <Check className="mr-2 h-4 w-4" />
-                    Assign to {selectedLearnerIds.length || ""} learner
-                    {selectedLearnerIds.length === 1 ? "" : "s"}
+                    Assign to {effectiveSelectedLearnerIds.length || ""} learner
+                    {effectiveSelectedLearnerIds.length === 1 ? "" : "s"}
                   </>
                 )}
               </Button>
@@ -277,7 +346,8 @@ export function CourseAssignmentFlow({ open, onOpenChange }: CourseAssignmentFlo
               </DialogTitle>
               <DialogDescription>
                 Successfully assigned {selectedCourseIds.length} course(s) to{" "}
-                {selectedLearnerIds.length} learner(s).
+                {effectiveSelectedLearnerIds.length} learner(s)
+                {refresherMonths ? `, with a refresher every ${refresherMonths} month${refresherMonths === 1 ? "" : "s"}` : ""}. Anyone who already had a course was skipped.
               </DialogDescription>
             </DialogHeader>
 
@@ -390,22 +460,35 @@ function LearnerItem({
   learner,
   selected,
   onToggle,
+  blocked,
+  alreadyCount,
+  totalSelected,
 }: {
   learner: Learner;
   selected: boolean;
   onToggle: () => void;
+  blocked: boolean;
+  alreadyCount: number;
+  totalSelected: number;
 }) {
   return (
     <div
-      className={`flex items-center gap-3 p-3 rounded-lg border cursor-pointer transition-colors ${
-        selected ? "bg-primary/5 border-primary" : "hover:bg-muted/50"
+      className={`flex items-center gap-3 p-3 rounded-lg border transition-colors ${
+        blocked
+          ? "opacity-50 blur-[0.6px] cursor-not-allowed bg-muted/40 select-none"
+          : selected
+            ? "bg-primary/5 border-primary cursor-pointer"
+            : "hover:bg-muted/50 cursor-pointer"
       }`}
-      onClick={onToggle}
+      onClick={blocked ? undefined : onToggle}
+      aria-disabled={blocked}
+      title={blocked ? "Already assigned - the same course can't be assigned twice" : undefined}
     >
-      <Checkbox 
-        checked={selected} 
+      <Checkbox
+        checked={selected}
+        disabled={blocked}
         onClick={(e) => e.stopPropagation()}
-        onCheckedChange={() => onToggle()} 
+        onCheckedChange={() => onToggle()}
       />
       <div className="flex-1 min-w-0">
         <p className="font-medium text-sm truncate">
@@ -413,6 +496,15 @@ function LearnerItem({
         </p>
         <p className="text-xs text-muted-foreground truncate">{learner.email}</p>
       </div>
+      {blocked ? (
+        <span className="text-[11px] font-medium rounded bg-muted px-1.5 py-0.5 whitespace-nowrap">
+          Already assigned
+        </span>
+      ) : alreadyCount > 0 ? (
+        <span className="text-[11px] rounded bg-amber-100 text-amber-800 px-1.5 py-0.5 whitespace-nowrap">
+          Has {alreadyCount} of {totalSelected}
+        </span>
+      ) : null}
     </div>
   );
 }

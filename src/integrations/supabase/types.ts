@@ -344,6 +344,8 @@ export type Database = {
           assigned_by: string | null
           course_id: string
           due_date: string | null
+          refresher_months: number | null
+          refresher_notified_at: string | null
           id: string
           user_id: string
         }
@@ -352,6 +354,8 @@ export type Database = {
           assigned_by?: string | null
           course_id: string
           due_date?: string | null
+          refresher_months?: number | null
+          refresher_notified_at?: string | null
           id?: string
           user_id: string
         }
@@ -360,6 +364,8 @@ export type Database = {
           assigned_by?: string | null
           course_id?: string
           due_date?: string | null
+          refresher_months?: number | null
+          refresher_notified_at?: string | null
           id?: string
           user_id?: string
         }
@@ -1760,6 +1766,10 @@ export type Database = {
       [_ in never]: never
     }
     Functions: {
+      start_course_refresher: {
+        Args: { p_course_id: string }
+        Returns: undefined
+      }
       get_user_role: {
         Args: { _user_id: string }
         Returns: Database["public"]["Enums"]["app_role"]

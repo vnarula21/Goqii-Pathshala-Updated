@@ -204,6 +204,38 @@ export function passwordResetEmail(opts: {
   return { to: opts.to, subject, text, html, orgName: opts.orgName };
 }
 
+export function refresherEmail(opts: {
+  to: string;
+  fullName: string;
+  courseTitle: string;
+  orgName?: string;
+}): EmailMessage {
+  const url = appUrl();
+  const link = url ? `${url}/learner` : "";
+  const name = opts.fullName || "there";
+  const subject = `Time for your refresher: ${opts.courseTitle}`;
+
+  const text = [
+    `Hi ${name},`,
+    "",
+    `It's time to refresh your knowledge of "${opts.courseTitle}". Your refresher is now open.`,
+    link ? `Open your dashboard and click "Refresher" next to the course: ${link}` : 'Open your dashboard and click "Refresher" next to the course.',
+    "",
+    "If you have questions, please contact your manager.",
+  ].join("\n");
+
+  const html = layout(
+    "Time for your refresher",
+    `<p>Hi ${esc(name)},</p>
+<p>It's time to refresh your knowledge of <b>${esc(opts.courseTitle)}</b>. Your refresher is now open.</p>
+${link ? `<p style="margin:24px 0"><a href="${esc(link)}" style="background:#f59e0b;color:#fff;text-decoration:none;padding:12px 20px;border-radius:6px;display:inline-block">Go to my dashboard</a></p>` : ""}
+<p style="font-size:14px">Click <b>Refresher</b> next to the course to start.</p>
+<p style="font-size:13px;color:#6b7280">If you have questions, please contact your manager.</p>`,
+  );
+
+  return { to: opts.to, subject, text, html, orgName: opts.orgName };
+}
+
 /** Looks up an organisation's display name; returns undefined on any problem. */
 export async function orgNameById(
   admin: { from: (t: string) => any },
