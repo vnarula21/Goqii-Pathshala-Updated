@@ -27,6 +27,10 @@ export interface EmailMessage {
   subject: string;
   text: string;
   html: string;
+  /** Organisation the email is sent on behalf of; shown as "<Org> via GOQii Pathshala". */
+  orgName?: string;
+  /** Replies go here (e.g. the manager who created the account). */
+  replyTo?: string;
 }
 
 const env = (k: string) => Deno.env.get(k)?.trim() || "";
@@ -51,10 +55,17 @@ function createClient(): SMTPClient {
   });
 }
 
-function fromHeader(): string {
-  const name = env("SMTP_FROM_NAME") || "GOQii Pathshala";
-  return `${name} <${env("SMTP_FROM")}>`;
+// Display names go into a header, so strip anything that could break it.
+const cleanName = (s: string) => s.replace(/[\r\n"<>\\]/g, " ").replace(/\s+/g, " ").trim().slice(0, 80);
+
+function fromHeader(orgName?: string): string {
+  const brand = env("SMTP_FROM_NAME") || "GOQii Pathshala";
+  const org = orgName ? cleanName(orgName) : "";
+  const name = org ? `${org} via ${brand}` : brand;
+  return `"${name}" <${env("SMTP_FROM")}>`;
 }
+
+const validEmail = (s?: string) => !!s && /^[^\s@<>,]+@[^\s@<>,]+\.[^\s@<>,]+$/.test(s);
 
 /** Sends several emails over one SMTP connection. Never throws. */
 export async function sendEmails(messages: EmailMessage[]): Promise<EmailResult[]> {
@@ -69,7 +80,8 @@ export async function sendEmails(messages: EmailMessage[]): Promise<EmailResult[
     for (const m of messages) {
       try {
         await client.send({
-          from: fromHeader(),
+          from: fromHeader(m.orgName),
+          ...(validEmail(m.replyTo) ? { replyTo: m.replyTo } : {}),
           to: m.to,
           subject: m.subject,
           content: m.text,
@@ -113,7 +125,7 @@ function layout(title: string, bodyHtml: string): string {
 <h2 style="margin:0 0 16px;font-size:20px">${esc(title)}</h2>
 ${bodyHtml}
 <hr style="border:none;border-top:1px solid #e5e7eb;margin:24px 0">
-<p style="font-size:12px;color:#6b7280;margin:0">GOQii Pathshala &middot; This is an automated message, please do not reply.</p>
+<p style="font-size:12px;color:#6b7280;margin:0">Sent via GOQii Pathshala. If you need help, contact your manager.</p>
 </div></body></html>`;
 }
 
@@ -122,16 +134,19 @@ export function welcomeEmail(opts: {
   fullName: string;
   password: string;
   role: string;
+  orgName?: string;
+  replyTo?: string;
 }): EmailMessage {
   const url = appUrl();
   const loginUrl = url ? `${url}/auth` : "";
   const role = ROLE_LABELS[opts.role] || opts.role;
-  const subject = "Your GOQii Pathshala account is ready";
+  const org = opts.orgName ? cleanName(opts.orgName) : "";
+  const subject = org ? `Your ${org} learning account is ready` : "Your GOQii Pathshala account is ready";
 
   const text = [
     `Hi ${opts.fullName},`,
     "",
-    `An account has been created for you on GOQii Pathshala (role: ${role}).`,
+    `An account has been created for you${org ? ` at ${org}` : ""} on GOQii Pathshala (role: ${role}).`,
     "",
     `Email:    ${opts.to}`,
     `Temporary password: ${opts.password}`,
@@ -144,7 +159,7 @@ export function welcomeEmail(opts: {
   const html = layout(
     "Welcome to GOQii Pathshala",
     `<p>Hi ${esc(opts.fullName)},</p>
-<p>An account has been created for you (role: <b>${esc(role)}</b>). Use these details to sign in:</p>
+<p>An account has been created for you${org ? ` at <b>${esc(org)}</b>` : ""} (role: <b>${esc(role)}</b>). Use these details to sign in:</p>
 <table style="background:#f9fafb;border-radius:6px;padding:12px 16px;font-size:14px" cellpadding="4">
 <tr><td style="color:#6b7280">Email</td><td><b>${esc(opts.to)}</b></td></tr>
 <tr><td style="color:#6b7280">Temporary password</td><td><b style="font-family:monospace;font-size:15px">${esc(opts.password)}</b></td></tr>
@@ -154,13 +169,14 @@ ${loginUrl ? `<p style="margin:24px 0"><a href="${esc(loginUrl)}" style="backgro
 <p style="font-size:13px;color:#6b7280">If you did not expect this email, please contact your manager.</p>`,
   );
 
-  return { to: opts.to, subject, text, html };
+  return { to: opts.to, subject, text, html, orgName: opts.orgName, replyTo: opts.replyTo };
 }
 
 export function passwordResetEmail(opts: {
   to: string;
   fullName: string;
   link: string;
+  orgName?: string;
 }): EmailMessage {
   const subject = "Reset your GOQii Pathshala password";
   const name = opts.fullName || "there";
@@ -185,5 +201,19 @@ export function passwordResetEmail(opts: {
 <p style="font-size:13px;color:#6b7280">If you did not request this, you can ignore this email — your password will not change.</p>`,
   );
 
-  return { to: opts.to, subject, text, html };
+  return { to: opts.to, subject, text, html, orgName: opts.orgName };
+}
+
+/** Looks up an organisation's display name; returns undefined on any problem. */
+export async function orgNameById(
+  admin: { from: (t: string) => any },
+  orgId?: string | null,
+): Promise<string | undefined> {
+  if (!orgId) return undefined;
+  try {
+    const { data } = await admin.from("organizations").select("name").eq("id", orgId).maybeSingle();
+    return data?.name || undefined;
+  } catch {
+    return undefined;
+  }
 }

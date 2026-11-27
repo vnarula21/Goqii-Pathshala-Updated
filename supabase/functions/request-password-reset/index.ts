@@ -14,7 +14,7 @@
 
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
-import { appUrl, passwordResetEmail, sendEmail } from "../_shared/email.ts";
+import { appUrl, orgNameById, passwordResetEmail, sendEmail } from "../_shared/email.ts";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -87,7 +87,15 @@ serve(async (req) => {
     const fullName =
       profile?.full_name || (data.user.user_metadata?.full_name as string | undefined) || "";
 
-    const result = await sendEmail(passwordResetEmail({ to: email, fullName, link }));
+    const { data: membership } = await admin
+      .from("user_organizations")
+      .select("organization_id")
+      .eq("user_id", data.user.id)
+      .limit(1)
+      .maybeSingle();
+    const orgName = await orgNameById(admin, membership?.organization_id);
+
+    const result = await sendEmail(passwordResetEmail({ to: email, fullName, link, orgName }));
     if (!result.sent) {
       console.error(`request-password-reset: email to ${email} failed: ${result.error}`);
     }

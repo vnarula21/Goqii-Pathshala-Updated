@@ -1,6 +1,6 @@
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
-import { sendEmails, welcomeEmail, emailConfigured } from "../_shared/email.ts";
+import { sendEmails, welcomeEmail, emailConfigured, orgNameById } from "../_shared/email.ts";
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
@@ -178,6 +178,8 @@ serve(async (req) => {
     const EMAIL_WORKERS = 5;
     const EMAIL_BUDGET_MS = 90_000;
     const emailStart = Date.now();
+    const orgName = await orgNameById(adminClient, effectiveOrgId);
+    const replyTo = authData.user.email ?? undefined;
     const queue = [...created];
     const markUnsent = (item: typeof created[number], error: string) => {
       item.result.emailSent = false;
@@ -193,7 +195,7 @@ serve(async (req) => {
           const chunk = queue.splice(0, 10);
           const outcomes = await sendEmails(
             chunk.map((c) =>
-              welcomeEmail({ to: c.result.email, fullName: c.fullName, password: c.password, role: 'learner' })
+              welcomeEmail({ to: c.result.email, fullName: c.fullName, password: c.password, role: 'learner', orgName, replyTo })
             )
           );
           chunk.forEach((c, i) => {
