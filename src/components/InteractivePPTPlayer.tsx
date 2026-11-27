@@ -44,8 +44,13 @@ interface InteractivePPTPlayerProps {
   onModuleComplete?: () => void;
 }
 
+import { useUserRole } from "@/hooks/useUserRole";
+
 export default function InteractivePPTPlayer({ module, savedModuleId, onModuleComplete }: InteractivePPTPlayerProps) {
   const [currentSlide, setCurrentSlide] = useState(0);
+  const { isLearner } = useUserRole();
+  const [rate, setRate] = useState(1);
+  const rateRef = useRef(1);
   const [isPlaying, setIsPlaying] = useState(false);
   const [showNarration, setShowNarration] = useState(false);
   const [isComplete, setIsComplete] = useState(false);
@@ -141,6 +146,8 @@ export default function InteractivePPTPlayer({ module, savedModuleId, onModuleCo
       const audio = new Audio(currentAudioRecord.audio_url);
       audio.muted = isMuted;
       audio.volume = volume / 100;
+      audio.defaultPlaybackRate = rateRef.current;
+      audio.playbackRate = rateRef.current;
 
       audio.addEventListener("loadedmetadata", () => {
         setAudioDuration(audio.duration);
@@ -163,12 +170,13 @@ export default function InteractivePPTPlayer({ module, savedModuleId, onModuleCo
       });
 
       audio.addEventListener("canplaythrough", () => {
+        audio.playbackRate = rateRef.current;
         audio.play().then(() => setIsPlaying(true)).catch(console.error);
       }, { once: true });
 
       audioRef.current = audio;
     } else if (!hasAudio && !isAutoGenerating && currentSlide < totalSlides - 1) {
-      const timer = setTimeout(() => setCurrentSlide(prev => prev + 1), 3000);
+      const timer = setTimeout(() => setCurrentSlide(prev => prev + 1), 3000 / rateRef.current);
       return () => clearTimeout(timer);
     }
 
@@ -187,6 +195,12 @@ export default function InteractivePPTPlayer({ module, savedModuleId, onModuleCo
       audioRef.current.volume = volume / 100;
     }
   }, [isMuted, volume]);
+
+  const changeRate = (r: number) => {
+    rateRef.current = r;
+    setRate(r);
+    if (audioRef.current) audioRef.current.playbackRate = r;
+  };
 
   const togglePlayPause = useCallback(() => {
     if (!audioRef.current) return;
@@ -282,6 +296,9 @@ export default function InteractivePPTPlayer({ module, savedModuleId, onModuleCo
         onToggleMute={() => setIsMuted(!isMuted)}
         onToggleFullscreen={toggleFullscreen}
         onSlideSelect={setCurrentSlide}
+        restricted={isLearner}
+        rate={rate}
+        onRateChange={changeRate}
       />
 
       {/* Narration Text (expandable) */}

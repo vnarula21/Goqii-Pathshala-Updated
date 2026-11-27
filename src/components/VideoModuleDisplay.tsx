@@ -1,4 +1,6 @@
 import { useState, useRef } from "react";
+import { useUserRole } from "@/hooks/useUserRole";
+import PlaybackSpeedButton from "@/components/PlaybackSpeedButton";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
@@ -24,6 +26,11 @@ export default function VideoModuleDisplay({ module, savedModuleId, timeLimitMin
   const [isMuted, setIsMuted] = useState(false);
   const [progress, setProgress] = useState(0);
   const [volume, setVolume] = useState(100);
+  const [rate, setRate] = useState(1);
+  const { isLearner } = useUserRole();
+  // Learners must watch the video through: no seeking or skipping ahead.
+  const restricted = isLearner;
+  const maxWatched = useRef(0);
   const { isTimeUp, handleTimeUp, hasTimeLimit } = useModuleTimeTracking(savedModuleId, timeLimitMinutes);
   const containerRef = useRef<HTMLDivElement>(null);
   const { isFullscreen, toggleFullscreen } = useFullscreen(containerRef as React.RefObject<HTMLElement>);
@@ -43,11 +50,28 @@ export default function VideoModuleDisplay({ module, savedModuleId, timeLimitMin
   const handleTimeUpdate = () => {
     const video = document.getElementById("video-player") as HTMLVideoElement;
     if (video) {
+      if (!video.seeking && video.currentTime > maxWatched.current) maxWatched.current = video.currentTime;
       setProgress((video.currentTime / video.duration) * 100);
     }
   };
 
+  // Safety net: if anything moves the playhead ahead of what was actually
+  // watched, snap back.
+  const handleSeeking = () => {
+    const video = document.getElementById("video-player") as HTMLVideoElement;
+    if (restricted && video && video.currentTime > maxWatched.current + 0.75) {
+      video.currentTime = maxWatched.current;
+    }
+  };
+
+  const handleRate = (r: number) => {
+    setRate(r);
+    const video = document.getElementById("video-player") as HTMLVideoElement;
+    if (video) video.playbackRate = r;
+  };
+
   const handleSeek = (value: number[]) => {
+    if (restricted) return;
     const video = document.getElementById("video-player") as HTMLVideoElement;
     if (video) {
       video.currentTime = (value[0] / 100) * video.duration;
@@ -73,6 +97,7 @@ export default function VideoModuleDisplay({ module, savedModuleId, timeLimitMin
   };
 
   const skip = (seconds: number) => {
+    if (restricted) return;
     const video = document.getElementById("video-player") as HTMLVideoElement;
     if (video) {
       video.currentTime += seconds;
@@ -110,6 +135,11 @@ export default function VideoModuleDisplay({ module, savedModuleId, timeLimitMin
                 onModuleComplete?.();
               }}
               onClick={handlePlayPause}
+              onSeeking={handleSeeking}
+              onLoadedMetadata={(e) => { e.currentTarget.playbackRate = rate; }}
+              controlsList="nodownload noplaybackrate"
+              disablePictureInPicture
+              onContextMenu={(e) => restricted && e.preventDefault()}
             />
             
             {/* Video Controls Overlay */}
@@ -117,23 +147,29 @@ export default function VideoModuleDisplay({ module, savedModuleId, timeLimitMin
               <Slider
                 value={[progress]}
                 onValueChange={handleSeek}
+                disabled={restricted}
                 max={100}
                 step={0.1}
                 className="mb-4"
               />
               
               <div className="flex items-center gap-2">
-                <Button variant="ghost" size="icon" className="text-white hover:bg-white/20" onClick={() => skip(-10)}>
-                  <SkipBack className="h-5 w-5" />
-                </Button>
+                {!restricted && (
+                  <Button variant="ghost" size="icon" className="text-white hover:bg-white/20" onClick={() => skip(-10)}>
+                    <SkipBack className="h-5 w-5" />
+                  </Button>
+                )}
                 
                 <Button variant="ghost" size="icon" className="text-white hover:bg-white/20" onClick={handlePlayPause}>
                   {isPlaying ? <Pause className="h-6 w-6" /> : <Play className="h-6 w-6" />}
                 </Button>
                 
-                <Button variant="ghost" size="icon" className="text-white hover:bg-white/20" onClick={() => skip(10)}>
-                  <SkipForward className="h-5 w-5" />
-                </Button>
+                {!restricted && (
+                  <Button variant="ghost" size="icon" className="text-white hover:bg-white/20" onClick={() => skip(10)}>
+                    <SkipForward className="h-5 w-5" />
+                  </Button>
+                )}
+                <PlaybackSpeedButton rate={rate} onChange={handleRate} className="text-white hover:bg-white/20 hover:text-white" />
 
                 <div className="flex items-center gap-2 ml-4">
                   <Button variant="ghost" size="icon" className="text-white hover:bg-white/20" onClick={toggleMute}>

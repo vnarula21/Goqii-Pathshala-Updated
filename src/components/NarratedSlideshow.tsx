@@ -9,6 +9,7 @@ import {
 } from "lucide-react";
 import { toast } from "sonner";
 import { useUserRole } from "@/hooks/useUserRole";
+import PlaybackSpeedButton from "@/components/PlaybackSpeedButton";
 
 interface Slide {
   image: string;
@@ -48,6 +49,16 @@ export default function NarratedSlideshow({ moduleId, title, approvalStatus, onM
   const [completed, setCompleted] = useState(false);
   const [starting, setStarting] = useState(false);
   const [isFullscreen, setIsFullscreen] = useState(false);
+  const [rate, setRate] = useState(1);
+  const rateRef = useRef(1);
+  // Learners must watch every slide in order: no jumping ahead or back.
+  const restricted = isLearner;
+
+  const changeRate = (r: number) => {
+    rateRef.current = r;
+    setRate(r);
+    if (audioRef.current) audioRef.current.playbackRate = r;
+  };
 
   useEffect(() => {
     const onFsChange = () => setIsFullscreen(document.fullscreenElement === stageRef.current);
@@ -156,10 +167,12 @@ export default function NarratedSlideshow({ moduleId, title, approvalStatus, onM
     if (s?.audio && el) {
       el.src = s.audio;
       el.currentTime = 0;
+      el.defaultPlaybackRate = rateRef.current;
+      el.playbackRate = rateRef.current;
       el.play().catch(() => setPlaying(false));
     } else {
       // Silent slide: hold a few seconds, then continue.
-      silentTimer.current = setTimeout(() => goNext(), SILENT_MS);
+      silentTimer.current = setTimeout(() => goNext(), SILENT_MS / rateRef.current);
     }
   };
 
@@ -260,12 +273,17 @@ export default function NarratedSlideshow({ moduleId, title, approvalStatus, onM
               <Button size="icon" variant="ghost" className="h-9 w-9" onClick={toggle} aria-label={playing ? "Pause" : "Play"}>
                 {completed ? <RotateCcw className="h-5 w-5" /> : playing ? <Pause className="h-5 w-5" /> : <Play className="h-5 w-5" />}
               </Button>
-              <Button size="icon" variant="ghost" className="h-9 w-9" onClick={() => go(idx - 1)} disabled={idx === 0}>
-                <ChevronLeft className="h-5 w-5" />
-              </Button>
-              <Button size="icon" variant="ghost" className="h-9 w-9" onClick={() => go(idx + 1)} disabled={idx === slides.length - 1}>
-                <ChevronRight className="h-5 w-5" />
-              </Button>
+              {!restricted && (
+                <>
+                  <Button size="icon" variant="ghost" className="h-9 w-9" onClick={() => go(idx - 1)} disabled={idx === 0}>
+                    <ChevronLeft className="h-5 w-5" />
+                  </Button>
+                  <Button size="icon" variant="ghost" className="h-9 w-9" onClick={() => go(idx + 1)} disabled={idx === slides.length - 1}>
+                    <ChevronRight className="h-5 w-5" />
+                  </Button>
+                </>
+              )}
+              <PlaybackSpeedButton rate={rate} onChange={changeRate} />
               <div className="flex items-center gap-1.5 text-xs text-muted-foreground ml-2">
                 <Volume2 className="h-3.5 w-3.5" />
                 <span>Slide {idx + 1} of {slides.length}{cur && !cur.audio ? " (no narration)" : ""}</span>

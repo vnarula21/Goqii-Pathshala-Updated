@@ -7,6 +7,7 @@ import { Download, Presentation, ExternalLink, Clock, ChevronLeft, ChevronRight,
 import SlideRenderer from "@/components/ppt/SlideRenderer";
 import { ModuleTimer, useModuleTimeTracking } from "./gamification/ModuleTimer";
 import { useUserRole } from "@/hooks/useUserRole";
+import PlaybackSpeedButton from "@/components/PlaybackSpeedButton";
 import { useFullscreen } from "@/hooks/useFullscreen";
 import FullscreenButton from "@/components/FullscreenButton";
 import { supabase } from "@/integrations/supabase/client";
@@ -53,7 +54,12 @@ export default function PresentationModuleDisplay({ module, savedModuleId, timeL
   const [currentSlide, setCurrentSlide] = useState(0);
   const [isComplete, setIsComplete] = useState(false);
   const { isTimeUp, handleTimeUp, hasTimeLimit } = useModuleTimeTracking(savedModuleId, timeLimitMinutes);
-  const { isAdmin } = useUserRole();
+  const { isAdmin, isLearner } = useUserRole();
+  const [rate, setRate] = useState(1);
+  const changeRate = (r: number) => {
+    setRate(r);
+    if (audioRef.current) audioRef.current.playbackRate = r;
+  };
   const containerRef = useRef<HTMLDivElement>(null);
   const { isFullscreen, toggleFullscreen } = useFullscreen(containerRef as React.RefObject<HTMLElement>);
 
@@ -93,6 +99,8 @@ export default function PresentationModuleDisplay({ module, savedModuleId, timeL
     const el = audioRef.current;
     if (!el || !currentClip) return;
     el.src = currentClip.audio_url;
+    el.defaultPlaybackRate = rate;
+    el.playbackRate = rate;
     el.play().then(() => setIsPlaying(true)).catch(() => setIsPlaying(false));
   }, [currentClip?.audio_url]);
 
@@ -248,6 +256,7 @@ export default function PresentationModuleDisplay({ module, savedModuleId, timeL
               <Volume2 className="h-3.5 w-3.5" />
               <span>Narrating slide {narrationSlide} of {clips[clips.length - 1]?.slide_number ?? clips.length}</span>
             </div>
+            <PlaybackSpeedButton rate={rate} onChange={changeRate} />
           </>
         )}
         <div className="flex-1" />
@@ -347,18 +356,22 @@ export default function PresentationModuleDisplay({ module, savedModuleId, timeL
           </div>
 
           <div className="flex items-center gap-1">
-            <Button variant="ghost" size="icon" className="h-8 w-8" onClick={() => setCurrentSlide(prev => Math.max(0, prev - 1))} disabled={currentSlide === 0}>
-              <ChevronLeft className="h-4 w-4" />
-            </Button>
-            <Button variant="ghost" size="icon" className="h-8 w-8" onClick={() => setCurrentSlide(prev => Math.min(allSlides.length - 1, prev + 1))} disabled={currentSlide === allSlides.length - 1}>
-              <ChevronRight className="h-4 w-4" />
-            </Button>
+            {!isLearner && (
+              <>
+                <Button variant="ghost" size="icon" className="h-8 w-8" onClick={() => setCurrentSlide(prev => Math.max(0, prev - 1))} disabled={currentSlide === 0}>
+                  <ChevronLeft className="h-4 w-4" />
+                </Button>
+                <Button variant="ghost" size="icon" className="h-8 w-8" onClick={() => setCurrentSlide(prev => Math.min(allSlides.length - 1, prev + 1))} disabled={currentSlide === allSlides.length - 1}>
+                  <ChevronRight className="h-4 w-4" />
+                </Button>
+              </>
+            )}
 
             <div className="flex items-center gap-1 mx-2">
               {allSlides.map((_, idx) => (
                 <button
                   key={idx}
-                  onClick={() => setCurrentSlide(idx)}
+                  onClick={() => !isLearner && setCurrentSlide(idx)}
                   className={`w-2 h-2 rounded-full transition-colors ${
                     idx === currentSlide ? "bg-primary" : "bg-muted-foreground/30"
                   }`}
